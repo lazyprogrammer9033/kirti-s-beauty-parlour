@@ -193,7 +193,8 @@ export async function render(view, { query }) {
             inCart ? h('span.tile-qty', String(inCart.quantity)) : null,
             h('span.tile-name', s.name),
             h('span.tile-meta', h('strong', money(s.priceCents)), s.durationMinutes ? h('span.muted', ` · ${s.durationMinutes} min`) : null));
-        }), !cat?.services.length ? h('p.muted', 'No services in this category yet.') : null)));
+        }), !cat ? h('p.muted', 'No services yet. ', session.can('services.manage') ? h('a', { href: '#/services' }, 'Add your services and prices.') : 'The owner can add them on the Services screen.')
+          : !cat.services.length ? h('p.muted', 'No services in this category yet.') : null)));
   }
 
   // ---------- Bill ----------

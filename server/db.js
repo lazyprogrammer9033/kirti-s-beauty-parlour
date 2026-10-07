@@ -4,14 +4,17 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 const migrations = require('./migrations');
+const crypto = require('crypto');
 const { nowIso } = require('./lib/time');
+const { hashPassword } = require('./lib/secrets');
 
 const REQUIRED_TABLES = ['customers', 'visits', 'invoices', 'invoice_items', 'payments', 'services', 'users'];
 
 // Holds the live connection so a restore can swap the underlying file.
 class DbHolder {
-  constructor(file) {
+  constructor(file, seedOptions = {}) {
     this.file = file;
+    this.seedOptions = seedOptions;
     this.conn = null;
   }
 
@@ -23,7 +26,7 @@ class DbHolder {
     this.conn.pragma('busy_timeout = 5000');
     this.conn.pragma('synchronous = NORMAL');
     migrate(this.conn);
-    seed(this.conn);
+    seed(this.conn, this.seedOptions);
     return this.conn;
   }
 
@@ -57,6 +60,8 @@ const DEFAULT_SETTINGS = {
   business_website: '',
   business_social: '',
   business_logo: '',
+  // '0' opens the app straight away as the owner, with no sign-in screen.
+  require_login: '0',
   timezone: 'America/Toronto',
   currency: 'CAD',
   tax_name: 'HST',
@@ -77,16 +82,16 @@ const DEFAULT_SETTINGS = {
   smtp_from: '',
 };
 
-// Starter catalogue so the salon can bill on day one. Every item is ordinary
-// data the owner can edit or disable from the Services screen.
-const STARTER_SERVICES = [
+// Sample catalogue used by tests and demos. A real salon starts empty and adds
+// its own services and prices from the Services screen.
+const SAMPLE_SERVICES = [
   ['Hair', [['Haircut', 4500, 45], ['Hair Styling', 5000, 45], ['Hair Colour', 12000, 120], ['Highlights', 15000, 150], ['Blow Dry', 3500, 30]]],
   ['Facial', [['Basic Facial', 4000, 45], ['Deep Cleansing Facial', 6000, 60], ['Hydrating Facial', 7000, 60]]],
   ['Waxing', [['Eyebrows', 1000, 10], ['Upper Lip', 800, 10], ['Full Face', 3000, 30], ['Arms', 3500, 30], ['Legs', 5000, 45]]],
   ['Nails', [['Manicure', 3000, 30], ['Pedicure', 4500, 45], ['Gel Nails', 5500, 60]]],
 ];
 
-function seed(db) {
+function seed(db, { sampleServices = false, requireLogin } = {}) {
   const now = nowIso();
   const roleCount = db.prepare('SELECT COUNT(*) c FROM roles').get().c;
   if (roleCount === 0) {
@@ -95,15 +100,25 @@ function seed(db) {
     ins.run('staff', 'Staff', now, now);
   }
   const insSetting = db.prepare('INSERT OR IGNORE INTO business_settings (key, value, created_at, updated_at) VALUES (?, ?, ?, ?)');
-  for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insSetting.run(k, v, now, now);
+  const defaults = { ...DEFAULT_SETTINGS, ...(requireLogin === undefined ? {} : { require_login: requireLogin ? '1' : '0' }) };
+  for (const [k, v] of Object.entries(defaults)) insSetting.run(k, v, now, now);
+
+  // Open access needs someone to act as: create the owner with an unguessable
+  // password, which they replace if they later turn sign-in on.
+  const openAccess = db.prepare("SELECT value FROM business_settings WHERE key = 'require_login'").get().value === '0';
+  if (openAccess && db.prepare('SELECT COUNT(*) c FROM users').get().c === 0) {
+    const ownerRole = db.prepare("SELECT id FROM roles WHERE code = 'owner'").get().id;
+    db.prepare('INSERT INTO users (username, display_name, password_hash, role_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('kirti', 'Kirti', hashPassword(crypto.randomBytes(32).toString('base64url')), ownerRole, now, now);
+  }
 
   const catCount = db.prepare('SELECT COUNT(*) c FROM service_categories').get().c;
-  if (catCount === 0) {
+  if (sampleServices && catCount === 0) {
     db.transaction(() => {
       const insCat = db.prepare('INSERT INTO service_categories (name, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?)');
       const insSvc = db.prepare(`INSERT INTO services (category_id, name, price_cents, duration_minutes, taxable, sort_order, created_at, updated_at)
         VALUES (?, ?, ?, ?, 1, ?, ?, ?)`);
-      STARTER_SERVICES.forEach(([cat, items], ci) => {
+      SAMPLE_SERVICES.forEach(([cat, items], ci) => {
         const catId = insCat.run(cat, ci, now, now).lastInsertRowid;
         items.forEach(([name, price, mins], si) => insSvc.run(catId, name, price, mins, si, now, now));
       });

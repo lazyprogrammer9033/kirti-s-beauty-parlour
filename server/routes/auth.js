@@ -23,7 +23,9 @@ module.exports = function authRoutes(api, ctx) {
   api.get('/auth/status', (req, res) => {
     const db = ctx.db();
     const users = db.prepare('SELECT COUNT(*) c FROM users').get().c;
-    res.json({ setupRequired: users === 0, user: userPayload(req.user), businessName: ctx.settings.get('business_name') });
+    const user = userPayload(req.user);
+    if (user) user.openAccess = !!req.user.openAccess;
+    res.json({ setupRequired: users === 0, user, requireLogin: ctx.settings.get('require_login') !== '0', businessName: ctx.settings.get('business_name') });
   });
 
   // First run only: create the owner account.
@@ -76,6 +78,29 @@ module.exports = function authRoutes(api, ctx) {
     if (req.user) ctx.db().prepare('DELETE FROM sessions WHERE id = ?').run(req.user.sessionId);
     res.setHeader('Set-Cookie', clearCookie(secure(req)));
     res.json({ ok: true });
+  });
+
+  // Turns the sign-in screen on (setting the owner's username and password at
+  // the same time) or off again. Owner only.
+  api.post('/auth/require-login', (req, res) => {
+    if (!req.user) throw new HttpError(401, 'Please sign in');
+    if (!can(req.user, 'settings.manage')) throw new HttpError(403, 'Only the owner can change this');
+    const db = ctx.db();
+    if (req.body.enabled) {
+      const username = str(req.body.username, { required: true, max: 40, label: 'Username' });
+      validatePassword(req.body.password);
+      const taken = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(username, req.user.id);
+      if (taken) throw new HttpError(409, 'That username is already used by another account');
+      db.prepare('UPDATE users SET username = ?, password_hash = ?, updated_at = ? WHERE id = ?').run(username, hashPassword(req.body.password), nowIso(), req.user.id);
+      ctx.settings.set('require_login', '1', req.user.id);
+      audit(db, req, 'auth.login_required', 'user', req.user.id, { enabled: true });
+      const { token, expires } = createSession(db, req.user.id);
+      res.setHeader('Set-Cookie', sessionCookie(token, expires, secure(req)));
+    } else {
+      ctx.settings.set('require_login', '0', req.user.id);
+      audit(db, req, 'auth.login_required', 'user', req.user.id, { enabled: false });
+    }
+    res.json({ ok: true, requireLogin: !!req.body.enabled });
   });
 
   api.post('/auth/password', (req, res) => {

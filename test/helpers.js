@@ -8,7 +8,7 @@ const { createApp } = require('../server/app');
 // Starts a fresh app on a random port with its own temp data folder.
 async function startApp(options = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'salon-test-'));
-  const app = createApp({ dataDir, scheduler: false, ...options });
+  const app = createApp({ dataDir, scheduler: false, requireLogin: true, sampleServices: true, ...options });
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });

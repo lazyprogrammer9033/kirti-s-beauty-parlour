@@ -39,8 +39,9 @@ The app runs on one Mac at the salon. The iPad (and any other device on the salo
    On the iPad (Wi-Fi): http://Kirtis-MacBook-Air.local:3000
                      or http://192.168.1.23:3000
    ```
-5. On the Mac, open **http://localhost:3000** in Safari or Chrome and create the owner account (your name, a username and a password).
-6. Go to **Services** and check the prices of the starter services (they are examples). Then go to **Settings** to add the salon address, phone, logo and tax settings.
+5. On the Mac, open **http://localhost:3000** in Safari or Chrome. The app opens straight to the dashboard: there is no setup screen and no password by default.
+6. Go to **Services** and add your services and prices (the list starts empty). Then go to **Settings** to add the salon address, phone, logo and tax settings.
+7. Optional: to require a password, go to **Settings › My Account** and choose **Turn on sign-in**. Without it, anyone on your Wi-Fi who opens the app has full access.
 
 Keep the `Start Salon.command` window open while the salon is open (you can minimise it). It also keeps the Mac awake so the iPad can always connect. To stop the app, close the window or press Ctrl+C in it.
 
@@ -51,7 +52,7 @@ Keep the `Start Salon.command` window open while the salon is open (you can mini
 1. Make sure the iPad is on the **same Wi-Fi** as the Mac.
 2. Open **Safari** and type the iPad address shown in the Mac window, e.g. `http://Kirtis-MacBook-Air.local:3000`.
    If the `.local` name doesn't load, use the number address (e.g. `http://192.168.1.23:3000`).
-3. Sign in.
+3. The dashboard opens (or the sign-in screen, if you turned sign-in on).
 4. Tap the **Share** button › **Add to Home Screen** › **Add**. The salon app now opens full-screen from its own icon, like a normal app.
 
 Tips:

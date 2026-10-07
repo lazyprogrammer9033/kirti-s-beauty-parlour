@@ -385,7 +385,7 @@ const ACTION_LABELS = {
   'visit.created': 'Visit created', 'visit.notes_updated': 'Visit note edited', 'invoice.created': 'Invoice created', 'invoice.voided': 'Invoice voided',
   'invoice.emailed': 'Receipt emailed', 'payment.recorded': 'Payment recorded', 'service.price_changed': 'Service price changed',
   'service.created': 'Service created', 'service.updated': 'Service updated', 'category.created': 'Category created', 'category.updated': 'Category updated',
-  'user.created': 'User created', 'user.updated': 'User updated', 'user.password_changed': 'Password changed', 'auth.login': 'Signed in', 'auth.login_failed': 'Failed sign-in',
+  'user.created': 'User created', 'user.updated': 'User updated', 'user.password_changed': 'Password changed', 'auth.login': 'Signed in', 'auth.login_required': 'Sign-in setting changed', 'auth.login_failed': 'Failed sign-in',
   'settings.updated': 'Settings changed', 'settings.tax_changed': 'Tax settings changed', 'backup.created': 'Backup created', 'backup.restored': 'Backup restored',
   'backup.deleted': 'Backup deleted', 'backup.downloaded': 'Backup downloaded', 'data.exported': 'Data exported', 'drive.connected': 'Google Drive connected', 'drive.disconnected': 'Google Drive disconnected',
 };
@@ -425,6 +425,7 @@ async function audit(body) {
 
 async function account(body) {
   clear(body);
+  if (session.user.openAccess) return body.append(signInCard());
   const cur = h('input.input', { type: 'password', autocomplete: 'current-password' });
   const next = h('input.input', { type: 'password', autocomplete: 'new-password' });
   body.append(h('form.card.stack', {
@@ -443,4 +444,45 @@ async function account(body) {
   h('p.muted', `Username: ${session.user.username} · ${session.user.role === 'owner' ? 'Owner' : 'Staff'}`),
   h('div.grid-2', field('Current password', cur), field('New password', next, 'At least 8 characters.')),
   h('div.row.end', h('button.btn.primary', { type: 'submit' }, 'Change password'))));
+  if (session.isOwner) body.append(signInCard());
+}
+
+// The sign-in screen is off by default so the app opens straight away.
+function signInCard() {
+  if (!session.user.openAccess) {
+    return h('div.card.stack',
+      h('h3', 'Sign-in screen is on'),
+      h('p.muted', 'Everyone must sign in with a username and password. Turning it off lets anyone who opens the app use it as the owner.'),
+      h('div.row.end', h('button.btn.ghost', {
+        type: 'button',
+        onclick: async () => {
+          if (!(await confirmDialog({ title: 'Turn off the sign-in screen?', message: 'Anyone on your Wi-Fi who opens the app will have full owner access.', confirmLabel: 'Turn off', danger: true }))) return;
+          try {
+            await api.post('/auth/require-login', { enabled: false });
+            await api.post('/auth/logout');
+            location.reload();
+          } catch (ex) {
+            toast(ex.message, 'error');
+          }
+        },
+      }, 'Turn off sign-in')));
+  }
+  const username = h('input.input', { value: session.user.username, autocomplete: 'username', autocapitalize: 'none', required: true });
+  const password = h('input.input', { type: 'password', autocomplete: 'new-password', required: true, minlength: 8 });
+  return h('form.card.stack', {
+    onsubmit: async (e) => {
+      e.preventDefault();
+      try {
+        await api.post('/auth/require-login', { enabled: true, username: username.value, password: password.value });
+        toast('Sign-in turned on. Use this username and password from now on.');
+        location.reload();
+      } catch (ex) {
+        toast(ex.message, 'error');
+      }
+    },
+  },
+  h('h3', 'No sign-in needed'),
+  h('p.muted', 'The app opens straight away as the owner. Anyone on your Wi-Fi who opens it gets full access. To protect it with a password, choose one below.'),
+  h('div.grid-2', field('Username', username), field('Password', password, 'At least 8 characters.')),
+  h('div.row.end', h('button.btn.primary', { type: 'submit' }, 'Turn on sign-in')));
 }

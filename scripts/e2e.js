@@ -18,7 +18,8 @@ const DEVICES = {
 
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
-  const t = await startApp();
+  // Default first run: no sign-in screen. Sample services make billing testable.
+  const t = await startApp({ requireLogin: false });
   const browser = await chromium.launch();
   const errors = [];
   const shot = async (page, name) => (await page.waitForTimeout(250), page.screenshot({ path: path.join(OUT, name + '.png'), fullPage: true }));
@@ -33,14 +34,8 @@ const DEVICES = {
     const page = await ctx.newPage();
     watch(page, 'ipad');
     await page.goto(t.base + '/');
-    await page.getByText('Let’s set up your salon').waitFor();
-    await shot(page, '01-setup');
-    const inputs = page.locator('form input');
-    await inputs.nth(1).fill('Kirti Patel');
-    await inputs.nth(2).fill('kirti');
-    await inputs.nth(3).fill('Secret-pass-1');
-    await page.getByRole('button', { name: 'Create owner account' }).click();
     await page.getByText('Good', { exact: false }).first().waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Sign out' }).count(), 0);
     await page.waitForTimeout(400);
     await shot(page, '02-dashboard-empty-ipad');
 
@@ -187,6 +182,15 @@ const DEVICES = {
       await c2.close();
     }
 
+    // Turn on the sign-in screen from My Account; the owner stays signed in.
+    await page.goto(t.base + '/#/settings/account');
+    await page.getByText('No sign-in needed').waitFor();
+    await shot(page, '22-signin-off');
+    await page.locator('form.card input[type=password]').fill('Secret-pass-1');
+    await page.getByRole('button', { name: 'Turn on sign-in' }).click();
+    await page.getByText('Sign-in screen is on').waitFor();
+    await page.getByRole('button', { name: 'Sign out' }).waitFor();
+
     // Staff account cannot see reports or settings tabs
     await page.goto(t.base + '/#/settings/users');
     await page.getByRole('button', { name: 'Add staff' }).click();
@@ -200,6 +204,7 @@ const DEVICES = {
     const sp = await sctx.newPage();
     watch(sp, 'staff');
     await sp.goto(t.base + '/');
+    await sp.getByText('Welcome back').waitFor();
     await sp.locator('form input').nth(0).fill('meera');
     await sp.locator('form input').nth(1).fill('staff-pass-1');
     await sp.getByRole('button', { name: 'Sign in' }).click();

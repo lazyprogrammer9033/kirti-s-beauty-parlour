@@ -92,7 +92,7 @@ function shell() {
     h('div.nav-user',
       avatar(user.displayName, 'sm'),
       h('div.nav-user-text', h('span.nav-user-name', user.displayName), h('span.nav-user-role', user.role === 'owner' ? 'Owner' : 'Staff')),
-      h('button.icon-btn', { type: 'button', title: 'Sign out', 'aria-label': 'Sign out', onclick: logout }, icon('logout', 20))));
+      user.openAccess ? null : h('button.icon-btn', { type: 'button', title: 'Sign out', 'aria-label': 'Sign out', onclick: logout }, icon('logout', 20))));
   main = h('main.main', { id: 'main' });
   const topbar = h('header.topbar',
     h('button.icon-btn', { type: 'button', 'aria-label': 'Menu', onclick: () => document.body.classList.toggle('nav-open') }, icon('menu')),

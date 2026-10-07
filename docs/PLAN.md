@@ -83,7 +83,8 @@ What the app does with Drive instead:
 
 Implemented:
 - Owner and staff accounts with role-based permissions checked on the server for every request. Staff can manage customers, check in, bill, record payments and view history; reports, settings, staff accounts, backups, exports, voids, service prices and the audit log are owner-only.
-- Passwords hashed with scrypt (salted). First-run setup creates the owner; there is no default password.
+- The sign-in screen is off by default (owner's request): the app opens as the owner for anyone on the salon Wi-Fi. Settings › My Account turns it on with a username and password. The default owner account gets a random, unusable password until then.
+- Passwords hashed with scrypt (salted).
 - Sessions use a random token in an HttpOnly, SameSite cookie; only its hash is stored. Password changes sign out other devices.
 - Sign-in lockout for 5 minutes after 5 wrong passwords.
 - CSRF protection (custom request header required on every change) plus a strict Content-Security-Policy, `X-Frame-Options: DENY` and no inline scripts.
@@ -104,7 +105,7 @@ Concerns the owner should know about:
 | Refunds | Void the invoice (keeps the record, removes it from totals); hand back money outside the app | Partial refunds as negative payments |
 | Paying later | Allowed with explicit confirmation; balance shows on the profile and dashboard, and can be paid from the receipt page | Reminders for balances |
 | Tax | One configurable tax (Ontario HST 13% to start), per-service taxable flag, tax-included or tax-excluded pricing | Separate GST + PST lines for other provinces |
-| Starter services | The examples from the brief are pre-loaded with sample prices | **Review prices in Services before the first customer** |
+| Services | The catalogue starts empty; the owner adds services and prices | |
 | Tips | Not included | Add a tip line and staff tip report |
 | Gift cards, packages, memberships | Not included (future) | |
 | Customer erasure requests | Customers can only be made inactive | Anonymise personal fields while keeping invoices |

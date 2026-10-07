@@ -17,11 +17,21 @@ const { Mailer } = require('./lib/email');
  *   dbFile       override database path (tests use a temp file)
  *   secureCookies  set when served over HTTPS
  *   scheduler    start the automatic backup timer (default true)
+ *   requireLogin   first-run default for the sign-in screen (default off)
+ *   sampleServices seed a demo service catalogue into an empty database
  */
+// With sign-in turned off, every request acts as the first active owner.
+function openAccessUser(ctx) {
+  if (ctx.settings.get('require_login') !== '0') return null;
+  const row = ctx.db().prepare(`SELECT u.id, u.username, u.display_name, r.code AS role FROM users u JOIN roles r ON r.id = u.role_id
+    WHERE u.active = 1 AND r.code = 'owner' ORDER BY u.id LIMIT 1`).get();
+  return row ? { id: row.id, username: row.username, displayName: row.display_name, role: row.role, sessionId: null, openAccess: true } : null;
+}
+
 function createApp(options = {}) {
   const dataDir = options.dataDir || path.join(__dirname, '..', 'data');
   const dbFile = options.dbFile || path.join(dataDir, 'salon.db');
-  const holder = new DbHolder(dbFile);
+  const holder = new DbHolder(dbFile, { requireLogin: options.requireLogin, sampleServices: options.sampleServices });
   holder.open();
 
   const secretKey = loadSecretKey(dataDir);
@@ -58,7 +68,7 @@ function createApp(options = {}) {
 
   // Every API request carries the signed-in user (or null).
   app.use('/api', (req, res, next) => {
-    req.user = loadUser(ctx.db(), req);
+    req.user = loadUser(ctx.db(), req) || openAccessUser(ctx);
     res.setHeader('Cache-Control', 'no-store');
     // CSRF defence: state-changing requests must carry a custom header, which a
     // cross-site form or image cannot add. Combined with SameSite cookies.

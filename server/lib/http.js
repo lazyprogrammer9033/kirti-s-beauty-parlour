@@ -41,4 +41,11 @@ function toCsv(columns, rows) {
   return '﻿' + [head, ...body].join('\r\n') + '\r\n';
 }
 
-module.exports = { HttpError, requirePerm, intParam, str, toCsv, csvEscape };
+// A random id the iPad attaches to records saved offline (see offline.js).
+function readClientRef(v) {
+  if (v == null || v === '') return null;
+  if (typeof v !== 'string' || !/^[\w-]{8,64}$/.test(v)) throw new HttpError(400, 'Invalid client reference');
+  return v;
+}
+
+module.exports = { HttpError, requirePerm, intParam, str, toCsv, csvEscape, readClientRef };

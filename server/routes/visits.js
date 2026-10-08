@@ -1,7 +1,7 @@
 'use strict';
 
-const { requirePerm, HttpError, intParam, str } = require('../lib/http');
-const { calculateInvoice, toCents } = require('../lib/money');
+const { requirePerm, HttpError, intParam, str, readClientRef } = require('../lib/http');
+const { calculateInvoice, toCents, formatCad } = require('../lib/money');
 const { nextVisitCode, nextInvoiceNumber } = require('../lib/codes');
 const { audit } = require('../lib/audit');
 const { nowIso, businessDate } = require('../lib/time');
@@ -107,6 +107,22 @@ function readPayments(list, totalCents) {
   return { payments: out, paidCents: sum };
 }
 
+function savedVisit(db, clientRef) {
+  return db.prepare(`SELECT v.id AS visitId, v.visit_code AS visitCode, i.id AS invoiceId, i.invoice_number AS invoiceNumber,
+      i.total_cents AS totalCents, i.balance_cents AS balanceCents
+    FROM visits v JOIN invoices i ON i.visit_id = v.id WHERE v.client_ref = ?`).get(clientRef);
+}
+
+const MAX_OFFLINE_AGE = 30 * 24 * 60 * 60 * 1000;
+
+function readOfflineAt(v) {
+  if (v == null || v === '') return null;
+  const d = new Date(v);
+  const age = Date.now() - d.getTime();
+  if (Number.isNaN(d.getTime()) || age < -5 * 60 * 1000 || age > MAX_OFFLINE_AGE) throw new HttpError(400, 'The saved visit time is not valid');
+  return d;
+}
+
 const invoiceStatus = (total, paid) => (paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid');
 
 module.exports = function visitRoutes(api, ctx) {
@@ -120,6 +136,11 @@ module.exports = function visitRoutes(api, ctx) {
   // Check-in + bill in one atomic step: visit, visit services, invoice, items, payments.
   api.post('/visits', create, (req, res) => {
     const db = ctx.db();
+    const clientRef = readClientRef(req.body.clientRef);
+    if (clientRef) {
+      const done = savedVisit(db, clientRef);
+      if (done) return res.json(done);
+    }
     const customerId = intParam(req.body.customerId, 'customer');
     const customer = db.prepare('SELECT id, customer_code, full_name, status FROM customers WHERE id = ?').get(customerId);
     if (!customer) throw new HttpError(404, 'Customer not found');
@@ -132,15 +153,20 @@ module.exports = function visitRoutes(api, ctx) {
       throw new HttpError(400, 'The bill is not fully paid. Confirm to leave a balance owing.', { needsBalanceConfirm: true });
     }
 
-    const now = new Date();
+    // A visit saved on the iPad while offline keeps the time it really happened
+    // and must still add up to what the customer was charged then.
+    if (req.body.expectedTotalCents != null && Number(req.body.expectedTotalCents) !== calc.totalCents) {
+      throw new HttpError(409, `The total is now ${formatCad(calc.totalCents)} instead of ${formatCad(Number(req.body.expectedTotalCents))} because prices or tax changed since it was saved.`, { totalCents: calc.totalCents });
+    }
+    const now = readOfflineAt(req.body.offlineAt) || new Date();
     const nowStr = now.toISOString();
     const bdate = businessDate(now, ctx.settings.timezone());
 
     const result = db.transaction(() => {
       const prior = db.prepare("SELECT COUNT(*) c FROM visits WHERE customer_id = ? AND status = 'completed'").get(customerId).c;
       const visitCode = nextVisitCode(db);
-      const visitId = db.prepare(`INSERT INTO visits (visit_code, customer_id, staff_user_id, visit_at, business_date, is_first_visit, status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?)`).run(visitCode, customerId, staffUserId, nowStr, bdate, prior === 0 ? 1 : 0, notes, nowStr, nowStr).lastInsertRowid;
+      const visitId = db.prepare(`INSERT INTO visits (visit_code, customer_id, staff_user_id, visit_at, business_date, is_first_visit, status, notes, created_at, updated_at, client_ref)
+        VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?)`).run(visitCode, customerId, staffUserId, nowStr, bdate, prior === 0 ? 1 : 0, notes, nowStr, nowStr, clientRef).lastInsertRowid;
 
       const invoiceNumber = nextInvoiceNumber(db, bdate.slice(0, 4));
       const balance = calc.totalCents - paidCents;
@@ -173,7 +199,7 @@ module.exports = function visitRoutes(api, ctx) {
         const pid = insPay.run(invoiceId, customerId, p.method, p.amountCents, p.reference, nowStr, bdate, req.user.id, nowStr, nowStr).lastInsertRowid;
         audit(db, req, 'payment.recorded', 'payment', pid, { invoiceNumber, method: p.method, amountCents: p.amountCents });
       }
-      audit(db, req, 'visit.created', 'visit', visitId, { visitCode, customerCode: customer.customer_code });
+      audit(db, req, 'visit.created', 'visit', visitId, { visitCode, customerCode: customer.customer_code, ...(clientRef ? { savedOfflineAt: nowStr } : {}) });
       audit(db, req, 'invoice.created', 'invoice', invoiceId, { invoiceNumber, totalCents: calc.totalCents, discountCents: calc.discountCents, taxCents: calc.taxCents });
       return { visitId, visitCode, invoiceId, invoiceNumber, totalCents: calc.totalCents, balanceCents: balance };
     })();

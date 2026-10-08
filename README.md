@@ -60,7 +60,15 @@ Tips:
 - Use the salon's private, password-protected Wi-Fi, not a guest network.
 - Printing from the iPad works with any AirPrint printer (Receipt › Print).
 
-### 3. Turn on Google Drive backups (recommended)
+### 3. Keep the iPad working when the Mac is off (recommended)
+
+If the Mac is asleep, off or out of Wi-Fi range, the iPad keeps checking customers in and taking payment. New customers and visits are saved on the iPad, a banner shows how many are waiting, and they're sent to the Mac when it's back. The Mac gives the final customer IDs and receipt numbers at that point, so numbers never clash. If a phone number was added on both devices, the iPad asks whether it's the same person.
+
+Offline mode needs a one-time step so Safari keeps a copy of the app: on the Mac, open **Settings › iPad & Offline** and follow the 4 steps there (install the salon certificate on the iPad, then use the `https://…:3443` address). Without it, offline mode still works, but only while the app stays open on the iPad.
+
+Works offline: customer lookup, new customers, check-in, services, discounts and payment. Needs the Mac: reports, receipts, editing past records, settings and backups. Entries saved offline live only on that iPad until they sync, so don't clear Safari's website data while the banner shows items waiting.
+
+### 4. Turn on Google Drive backups (recommended)
 
 Settings › **Backup & Data** walks you through it. In short:
 
@@ -70,7 +78,7 @@ Settings › **Backup & Data** walks you through it. In short:
 
 The app can only see the files it creates in your Drive, nothing else.
 
-### 4. Email receipts (optional)
+### 5. Email receipts (optional)
 
 Settings › **Email**. For Gmail: turn on 2-Step Verification, create an **App password** at <https://myaccount.google.com/apppasswords>, then enter `smtp.gmail.com`, port `587`, your Gmail address and the app password. Press **Send test**.
 
@@ -80,6 +88,7 @@ Everything is in the `data` folder next to the app:
 - `data/salon.db` — the database
 - `data/backups/` — automatic and manual backups
 - `data/secret.key` — encrypts the saved Google and email passwords; keep it with the app
+- `data/https/` — the salon's own certificate for the iPad's secure address
 
 **Moving to a new Mac:** set up the app on the new Mac (steps 1–3), connect Google Drive, then Settings › Backup & Data › **Restore from Drive**. Or copy the whole `data` folder across before the first start.
 
@@ -89,7 +98,7 @@ Everything is in the `data` folder next to the app:
 
 For access from anywhere with HTTPS, run the included `Dockerfile` on a small server (Render, Fly.io, Railway or a $5 VPS) with a persistent disk mounted at `/data`, behind HTTPS. Set `SECURE_COOKIES=1` and `TRUST_PROXY=1`, and set the app address in Settings so Google Drive's redirect URI uses it. Same app, same data model.
 
-Environment variables: `PORT` (3000), `HOST` (0.0.0.0), `DATA_DIR` (./data), `SECURE_COOKIES`, `TRUST_PROXY`, `APP_SECRET` (instead of `data/secret.key`), `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (instead of entering them in Settings).
+Environment variables: `PORT` (3000), `HTTPS_PORT` (3443), `HTTPS=0` (turn off the https listener), `HOST` (0.0.0.0), `DATA_DIR` (./data), `SECURE_COOKIES`, `TRUST_PROXY`, `APP_SECRET` (instead of `data/secret.key`), `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (instead of entering them in Settings).
 
 ## For developers
 
@@ -103,6 +112,7 @@ Browser walkthrough at iPad and Mac sizes (needs Playwright installed globally; 
 
 ```bash
 NODE_PATH=$(npm root -g) node scripts/e2e.js
+NODE_PATH=$(npm root -g) node scripts/e2e-offline.js   # offline mode and sync
 ```
 
 Layout: `server/` (Express app, SQLite schema in `server/migrations.js`, routes and libraries), `public/` (the browser app, plain JS modules and CSS, no build step), `test/`, `scripts/`, `docs/`.

@@ -10,6 +10,7 @@ const OWNER_TABS = [
   ['users', 'Staff Accounts'],
   ['email', 'Email'],
   ['audit', 'Audit Log'],
+  ['ipad', 'iPad & Offline'],
   ['account', 'My Account'],
 ];
 
@@ -23,7 +24,7 @@ export async function render(view, { params, query }) {
       owner ? h('a.btn.ghost', { href: '#/services' }, icon('scissors', 18), 'Manage services') : null),
     h('div.tabs', tabs.map(([k, l]) => h('a.tab' + (k === tab ? '.on' : ''), { href: '#/settings/' + k }, l))),
     body);
-  const renderers = { business, tax, backup, users, email, audit, account };
+  const renderers = { business, tax, backup, users, email, audit, account, ipad };
   await renderers[tab](body, { query, rerender: () => render(view, { params, query: new URLSearchParams() }) });
 }
 
@@ -486,4 +487,28 @@ function signInCard() {
   h('p.muted', 'The app opens straight away as the owner. Anyone on your Wi-Fi who opens it gets full access. To protect it with a password, choose one below.'),
   h('div.grid-2', field('Username', username), field('Password', password, 'At least 8 characters.')),
   h('div.row.end', h('button.btn.primary', { type: 'submit' }, 'Turn on sign-in')));
+}
+
+// One-time steps so the iPad keeps working when the salon computer is off.
+async function ipad(body) {
+  const info = await api.get('/offline/setup');
+  const httpPort = location.protocol === 'http:' ? location.port || '80' : '3000';
+  const certUrl = `http://${info.host}:${httpPort}/salon-certificate.crt`;
+  const secureUrl = info.https ? `https://${info.host}:${info.https.port}` : null;
+  const here = window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
+  clear(body,
+    h('div.card.stack',
+      h('h3', 'Keep working when the salon computer is off'),
+      h('p.muted', 'If the computer is asleep or off, the iPad still checks customers in and takes payment. Everything is saved on the iPad and sent to the computer when it’s back. Customer IDs and receipt numbers are given when it syncs.'),
+      here ? h('div.alert.ok', icon('check', 18), 'This device is set up: it keeps a copy of the app for offline use.') : null),
+    !secureUrl
+      ? h('div.card.stack', h('h3', 'Secure address not available'), h('p.muted', 'This computer couldn’t create its security certificate, so the iPad can’t keep an offline copy of the app. Offline mode still works while the app stays open on the iPad.'))
+      : h('div.card.stack',
+          h('h3', 'One-time iPad setup (about 2 minutes)'),
+          h('ol.steps',
+            h('li', 'On the iPad, open Safari and go to ', h('code', certUrl), '. Tap Allow, then Close.'),
+            h('li', 'Open the Settings app. Tap “Profile Downloaded” near the top (or General › VPN & Device Management › Salon Manager), then Install and enter the iPad passcode.'),
+            h('li', 'In Settings, go to General › About › Certificate Trust Settings and turn on “Salon Manager”.'),
+            h('li', 'Back in Safari, open ', h('code', secureUrl), '. Tap Share › Add to Home Screen. Use this new icon from now on and delete the old one.')),
+          h('p.muted.small', `If the .local name doesn’t load, use the number address instead: ${info.ips.map((ip) => `https://${ip}:${info.https.port}`).join(' or ')}. Offline entries are kept separately for each address, so stick to one.`)));
 }

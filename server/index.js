@@ -1,10 +1,12 @@
 'use strict';
 
 const path = require('path');
-const os = require('os');
+const https = require('https');
 const { createApp } = require('./app');
+const { ensureCertificates, localNames } = require('./lib/tls');
 
 const port = Number(process.env.PORT || 3000);
+const httpsPort = Number(process.env.HTTPS_PORT || 3443);
 const host = process.env.HOST || '0.0.0.0';
 const app = createApp({
   dataDir: process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : undefined,
@@ -12,21 +14,35 @@ const app = createApp({
   trustProxy: process.env.TRUST_PROXY === '1' ? true : 'loopback',
 });
 
-const server = app.listen(port, host, () => {
-  const addrs = Object.values(os.networkInterfaces()).flat().filter((a) => a && a.family === 'IPv4' && !a.internal).map((a) => a.address);
+// https runs beside http so the iPad can keep the app for offline use.
+const secure = process.env.HTTPS === '0' ? null : ensureCertificates(app.locals.ctx.dataDir);
+
+const servers = [];
+servers.push(app.listen(port, host, () => {
+  const { dns, ips } = localNames();
+  const lan = ips.filter((ip) => ip !== '127.0.0.1');
   console.log(`\n  Salon Manager is running.\n`);
   console.log(`  On this computer:   http://localhost:${port}`);
-  const local = os.hostname().replace(/\.local$/, '') + '.local';
-  console.log(`  On the iPad (Wi-Fi): http://${local}:${port}`);
-  for (const a of addrs) console.log(`                   or http://${a}:${port}`);
-  console.log(`  Data folder:        ${app.locals.ctx.dataDir}\n`);
-});
+  console.log(`  On the iPad (Wi-Fi): http://${dns[2]}:${port}`);
+  for (const a of lan) console.log(`                   or http://${a}:${port}`);
+  if (secure) {
+    console.log(`\n  iPad with offline mode (after the one-time certificate step in the README):`);
+    console.log(`                      https://${dns[2]}:${httpsPort}`);
+    for (const a of lan) console.log(`                   or https://${a}:${httpsPort}`);
+  }
+  console.log(`\n  Data folder:        ${app.locals.ctx.dataDir}\n`);
+}));
+app.locals.ctx.https = secure ? { port: httpsPort } : null;
+if (secure) {
+  const s = https.createServer({ key: secure.key, cert: secure.cert }, app);
+  s.on('error', (e) => console.warn(`  Secure (https) access is off: ${e.message}`));
+  servers.push(s.listen(httpsPort, host));
+}
+
 
 function shutdown() {
-  server.close(() => {
-    app.locals.close();
-    process.exit(0);
-  });
+  let open = servers.length;
+  for (const s of servers) s.close(() => --open === 0 && (app.locals.close(), process.exit(0)));
   setTimeout(() => process.exit(0), 3000).unref();
 }
 process.on('SIGINT', shutdown);

@@ -81,6 +81,7 @@ function createApp(options = {}) {
   app.use('/api', express.json({ limit: '2mb' }));
 
   const api = express.Router();
+  api.get('/health', (req, res) => res.json({ ok: true }));
   require('./routes/auth')(api, ctx);
   require('./routes/drive').publicRoutes(api, ctx);
   api.use((req, res, next) => (req.user ? next() : next(new HttpError(401, 'Please sign in'))));
@@ -96,9 +97,11 @@ function createApp(options = {}) {
   require('./routes/drive').privateRoutes(api, ctx);
   require('./routes/exports')(api, ctx);
   require('./routes/audit')(api, ctx);
+  require('./routes/offline')(api, ctx);
   app.use('/api', api);
   app.use('/api', (req, res, next) => next(new HttpError(404, 'Not found')));
 
+  require('./routes/offline-assets')(app, ctx);
   app.use(express.static(path.join(__dirname, '..', 'public'), { index: 'index.html', maxAge: 0 }));
   app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 

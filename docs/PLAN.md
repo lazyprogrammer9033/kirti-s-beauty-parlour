@@ -124,3 +124,12 @@ Concerns the owner should know about:
 - **SMS / email / WhatsApp reminders and birthday messages:** customers already store phone, email and date of birth; a scheduler exists (used by backups).
 - **Multi-location:** add a `locations` table and a `location_id` to visits and invoices.
 - **Online booking / customer portal / online payments:** would require cloud hosting with HTTPS (option b).
+
+## Offline mode (iPad)
+
+- The iPad keeps a snapshot of services, tax, staff and active customers (`GET /api/offline/snapshot`), refreshed on load, every 5 minutes and after each sale.
+- When the Mac can't be reached, new customers and visits go into an outbox in the iPad's local storage. Bill maths runs from the same `server/lib/money.js` the server uses (served as `/js/money.js`).
+- Sync sends the outbox in order. Each record carries a random `client_ref` (unique in the database), so a retry after a lost reply never creates a second customer or invoice. Visits keep the time they happened (`offlineAt`, at most 30 days old) and must match the total the customer was charged (`expectedTotalCents`), or the iPad asks before saving at today's prices.
+- Final CUS/INV numbers are only ever issued by the Mac. Offline receipts show a temporary `OFF-<device>-<n>` number.
+- Duplicate phones found at sync are put to the user: same person (the visit joins the existing customer) or different person.
+- Safari only allows a service worker over https, so the Mac also serves https on port 3443 with a certificate from its own private certificate authority (`data/https/`, made with `openssl`). The iPad trusts it once via Settings › iPad & Offline.

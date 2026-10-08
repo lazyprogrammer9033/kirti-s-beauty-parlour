@@ -6,7 +6,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY server ./server
 COPY public ./public
-ENV NODE_ENV=production DATA_DIR=/data PORT=3000
+ENV NODE_ENV=production DATA_DIR=/data PORT=3000 HTTPS=0
 VOLUME /data
 EXPOSE 3000
 CMD ["node", "server/index.js"]

@@ -296,4 +296,16 @@ CREATE TRIGGER customers_no_delete BEFORE DELETE ON customers
 BEGIN SELECT RAISE(ABORT, 'customers cannot be deleted; mark them inactive'); END;
 `,
   },
+  {
+    id: 2,
+    name: 'offline sync references',
+    // client_ref is a random id the iPad gives a customer or visit it saved
+    // while offline, so sending it again after a dropped connection is harmless.
+    sql: `
+ALTER TABLE customers ADD COLUMN client_ref TEXT;
+ALTER TABLE visits ADD COLUMN client_ref TEXT;
+CREATE UNIQUE INDEX customers_client_ref ON customers(client_ref) WHERE client_ref IS NOT NULL;
+CREATE UNIQUE INDEX visits_client_ref ON visits(client_ref) WHERE client_ref IS NOT NULL;
+`,
+  },
 ];

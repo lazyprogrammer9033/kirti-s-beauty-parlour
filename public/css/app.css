@@ -557,3 +557,18 @@ a.list-row:hover { background: var(--surface-2); border-radius: 12px; }
 /* Keep "Complete" visible while the bill panel scrolls on shorter screens. */
 .bill > :last-child { position: sticky; bottom: -22px; background: #fff; padding: 10px 0 22px; margin-bottom: -22px; }
 @media (max-width: 1099px) { .bill > :last-child { position: static; margin-bottom: 0; padding-bottom: 0; } }
+
+/* ---------- Offline mode ---------- */
+.offline-bar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; background: var(--warn-soft); color: #7a5214; font-size: 14px; font-weight: 500; position: sticky; top: 0; z-index: 30; }
+.offline-bar[hidden] { display: none; }
+.offline-bar.off { background: #3b2a35; color: #fff; }
+.offline-bar.off .btn.ghost { color: #fff; border-color: rgba(255, 255, 255, 0.4); background: transparent; }
+.offline-bar.attn { background: #fde8e4; color: #8a2f22; }
+.offline-bar .grow { flex: 1; }
+.offline-card { max-width: 640px; margin: 40px auto; }
+.outbox-item { border: 1px solid var(--line, #eadde2); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; }
+.outbox-item.attn { border-color: var(--warn); }
+.row.wrap { flex-wrap: wrap; }
+.success-icon.offline { background: var(--warn-soft); color: var(--warn); }
+@media print { .offline-bar { display: none !important; } }
+.alert.ok { background: var(--ok-soft); color: var(--ok); }

@@ -1,6 +1,6 @@
 'use strict';
 
-const { requirePerm, HttpError, intParam, str } = require('../lib/http');
+const { requirePerm, HttpError, intParam, str, readClientRef } = require('../lib/http');
 const { can } = require('../lib/auth');
 const { normalizePhone, formatPhone } = require('../lib/phone');
 const { nextCustomerCode } = require('../lib/codes');
@@ -159,6 +159,11 @@ module.exports = function customerRoutes(api, ctx) {
 
   api.post('/customers', edit, (req, res) => {
     const db = ctx.db();
+    const clientRef = readClientRef(req.body.clientRef);
+    if (clientRef) {
+      const existing = db.prepare('SELECT id, customer_code AS customerCode FROM customers WHERE client_ref = ?').get(clientRef);
+      if (existing) return res.json(existing);
+    }
     const input = readCustomerInput(req.body);
     const dupes = db.prepare('SELECT id, customer_code AS customerCode, full_name AS fullName, phone FROM customers WHERE phone_digits = ?').all(input.phoneDigits);
     if (dupes.length && !req.body.confirmDuplicate) {
@@ -169,15 +174,15 @@ module.exports = function customerRoutes(api, ctx) {
     const created = db.transaction(() => {
       const code = nextCustomerCode(db);
       const id = db.prepare(`INSERT INTO customers (customer_code, full_name, name_search, phone, phone_digits, email, date_of_birth, address,
-          preferred_services, referral_source, first_visit_date, status, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          preferred_services, referral_source, first_visit_date, status, created_by, created_at, updated_at, client_ref)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         code, input.fullName, input.fullName.toLowerCase(), input.phone, input.phoneDigits, input.email, input.dateOfBirth, input.address,
-        input.preferredServices, input.referralSource, input.firstVisitDate || today, input.status, req.user.id, now, now
+        input.preferredServices, input.referralSource, input.firstVisitDate || today, input.status, req.user.id, now, now, clientRef
       ).lastInsertRowid;
       if (input.notes) {
         db.prepare('INSERT INTO customer_notes (customer_id, note, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(id, input.notes, req.user.id, now, now);
       }
-      audit(db, req, 'customer.created', 'customer', id, { customerCode: code, duplicatePhoneConfirmed: dupes.length > 0 });
+      audit(db, req, 'customer.created', 'customer', id, { customerCode: code, duplicatePhoneConfirmed: dupes.length > 0, ...(clientRef ? { savedOffline: true } : {}) });
       return { id, customerCode: code };
     })();
     res.status(201).json(created);

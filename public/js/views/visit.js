@@ -1,11 +1,12 @@
 import { h, clear, icon, money, fmtDateShort, debounce, avatar, toast, field, parseMoney, METHODS, spinner, modal } from '../ui.js';
 import { api, download } from '../api.js';
 import { session } from '../app.js';
+import { offline, visitData } from '../offline.js';
 import { customerFormModal } from './shared.js';
 
 // The check-in + billing flow: find customer -> pick services -> take payment.
 export async function render(view, { query }) {
-  const [catalogue, staff] = await Promise.all([api.get('/services'), api.get('/staff')]);
+  const [catalogue, staff] = await Promise.all([visitData.catalogue(), visitData.staff()]);
   const allowDiscount = session.isOwner || session.settings.staff_can_discount === '1';
   const allowCustom = session.isOwner || session.settings.staff_can_custom_charge === '1';
   const touch = matchMedia('(pointer: coarse)').matches;
@@ -50,12 +51,12 @@ export async function render(view, { query }) {
           avatar(c.fullName, 'lg'),
           h('div.grow',
             h('div.sc-name', c.fullName),
-            h('div.muted', `${c.phone} · ${c.customerCode}`),
+            h('div.muted', c.pending ? `${c.phone} · new customer, saved on this iPad` : `${c.phone} · ${c.customerCode}`),
             h('div.sc-stats',
               h('span', h('strong', String(s.totalVisits)), ' visits'),
               h('span', 'Last visit ', h('strong', s.lastVisitAt ? fmtDateShort(s.lastVisitAt) : 'first visit today')),
               s.lastServices.length ? h('span', 'Last: ', h('strong', s.lastServices.join(', '))) : null)),
-          h('a.btn.ghost.sm', { href: '#/customer/' + c.id }, 'Profile')),
+          offline.active || c.pending ? null : h('a.btn.ghost.sm', { href: '#/customer/' + c.id }, 'Profile')),
         s.balanceCents > 0 ? h('div.alert.warn', icon('alert', 18), `This customer owes ${money(s.balanceCents)} from a previous visit.`) : null,
         c.notes.length ? h('div.alert.note', icon('note', 18), h('div', c.notes.slice(0, 3).map((n) => h('div', n.note)))) : null);
       return;
@@ -75,12 +76,12 @@ export async function render(view, { query }) {
       const digits = q.replace(/\D/g, '');
       const mine = ++seq;
       if ((mode === 'phone' && digits.length < 3) || (mode === 'name' && q.length < 2)) return clear(results, h('p.muted.center', mode === 'phone' ? 'Type the customer’s phone number' : 'Type the customer’s name'));
-      const rows = await api.get('/customers/search?q=' + encodeURIComponent(q)).catch(() => []);
+      const rows = await visitData.search(q).catch(() => []);
       if (mine !== seq) return;
       const list = rows.slice(0, 6).map((c) =>
         h('button.lookup-row', { type: 'button', onclick: () => selectCustomer(c.id) },
           avatar(c.fullName),
-          h('div.grow', h('strong', c.fullName), h('div.muted.small', `${c.phone} · ${c.totalVisits} visits · Last ${c.lastVisitAt ? fmtDateShort(c.lastVisitAt) : '—'}`)),
+          h('div.grow', h('strong', c.fullName), h('div.muted.small', c.pending ? `${c.phone} · new, waiting to sync` : `${c.phone} · ${c.totalVisits} visits · Last ${c.lastVisitAt ? fmtDateShort(c.lastVisitAt) : '—'}`)),
           h('span.btn.primary.sm', 'Select')));
       const exactPhone = mode === 'phone' && digits.length >= 10;
       clear(results,
@@ -142,8 +143,8 @@ export async function render(view, { query }) {
     const save = async (confirmDuplicate) => {
       err.textContent = '';
       try {
-        const r = await api.post('/customers', { fullName: nameEl.value, phone: phoneEl.value, email: emailEl.value, confirmDuplicate });
-        toast(`Customer created (${r.customerCode})`);
+        const r = await visitData.createCustomer({ fullName: nameEl.value, phone: phoneEl.value, email: emailEl.value, confirmDuplicate });
+        toast(r.offline ? 'Customer saved on this iPad' : `Customer created (${r.customerCode})`);
         selectCustomer(r.id);
       } catch (e) {
         if (e.status === 409) {
@@ -154,14 +155,20 @@ export async function render(view, { query }) {
       }
     };
     return h('div.new-inline',
-      h('div.new-inline-head', icon('userPlus', 20), h('strong', 'New customer'), h('button.link', { type: 'button', onclick: async () => { const r = await customerFormModal({ phone: phoneEl.value }); if (r) selectCustomer(r.id); } }, 'More details')),
+      h('div.new-inline-head', icon('userPlus', 20), h('strong', 'New customer'),
+        offline.active ? null : h('button.link', { type: 'button', onclick: async () => { const r = await customerFormModal({ phone: phoneEl.value }); if (r) selectCustomer(r.id); } }, 'More details')),
       h('div.grid-2', nameEl, phoneEl), emailEl, err,
       h('button.btn.primary.block', { type: 'button', onclick: () => save(false) }, icon('check', 18), 'Create New Customer'));
   }
 
   async function selectCustomer(id) {
     clear(customerSection, spinner());
-    state.customer = await api.get('/customers/' + id);
+    try {
+      state.customer = await visitData.customer(id);
+    } catch (e) {
+      toast(e.message, 'error');
+      state.customer = null;
+    }
     renderAll();
     if (innerWidth < 1000) servicesSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -205,7 +212,7 @@ export async function render(view, { query }) {
       return renderQuoteParts();
     }
     try {
-      state.quote = await api.post('/visits/quote', payload());
+      state.quote = await visitData.quote(payload());
       state.quoteError = '';
     } catch (e) {
       state.quote = null;
@@ -360,8 +367,9 @@ export async function render(view, { query }) {
     state.busy = true;
     renderQuoteParts();
     try {
-      const r = await api.post('/visits', body);
-      success(r);
+      const r = await visitData.createVisit(body, { customerName: state.customer.fullName, phone: state.customer.phone, totalCents: q.totalCents });
+      if (r.offline) successOffline(r);
+      else success(r);
     } catch (e) {
       state.busy = false;
       renderQuoteParts();
@@ -396,6 +404,20 @@ export async function render(view, { query }) {
           emailBtn),
         h('div.success-actions',
           h('a.btn.soft.lg', { href: '#/customer/' + c.id }, 'View customer'),
+          h('button.btn.primary.lg', { type: 'button', onclick: () => render(view, { query: new URLSearchParams() }) }, icon('plus', 20), 'Next customer'))));
+  }
+
+  // Saved on this iPad; the salon computer gives the real receipt number at sync.
+  function successOffline(r) {
+    const c = state.customer;
+    clear(view,
+      h('div.success.card',
+        h('div.success-icon.offline', icon('check', 44)),
+        h('h1.display', 'Saved on this iPad'),
+        h('p.big', `${c.fullName} · ${money(r.totalCents)}`),
+        r.balanceCents > 0 ? h('div.alert.warn', icon('alert', 18), `Balance owing: ${money(r.balanceCents)}`) : null,
+        h('p.muted', `Temporary receipt ${r.tempNumber}. The salon computer gives the final receipt number when it’s back, and the receipt can then be printed or emailed from Billing.`),
+        h('div.success-actions',
           h('button.btn.primary.lg', { type: 'button', onclick: () => render(view, { query: new URLSearchParams() }) }, icon('plus', 20), 'Next customer'))));
   }
 

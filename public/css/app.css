@@ -518,6 +518,7 @@ a.list-row:hover { background: var(--surface-2); border-radius: 12px; }
 .appt-card { display: flex; align-items: center; gap: 16px; width: 100%; text-align: left; padding: 16px 18px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow); color: var(--ink); }
 .appt-card:hover { border-color: var(--primary-soft); }
 .appt-card.dim { opacity: 0.6; }
+.appt-card.block-card { border-style: dashed; box-shadow: none; background: var(--bg); }
 .appt-card .icon { color: var(--muted); flex: none; }
 .appt-time { display: flex; flex-direction: column; min-width: 72px; }
 .appt-name { font-weight: 600; }

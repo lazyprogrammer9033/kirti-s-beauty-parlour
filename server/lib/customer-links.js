@@ -49,20 +49,41 @@ function openDays(ctx) {
   return new Set(String(ctx.settings.get('appt_open_days') ?? '0,1,2,3,4,5,6').split(',').filter(Boolean).map(Number));
 }
 
+// Customers can book and move appointments up to a year ahead.
+const BOOKING_DAYS = 365;
+
+function lastBookableDay(ctx) {
+  return addDays(businessDate(new Date(), ctx.settings.timezone()), BOOKING_DAYS);
+}
+
+// Is this salon day within the online booking window (today to a year out)?
+function bookableDay(ctx, ymd) {
+  const today = businessDate(new Date(), ctx.settings.timezone());
+  return ymd >= today && ymd <= lastBookableDay(ctx);
+}
+
+// Times the owner has blocked that overlap [startIso, endIso).
+function blocksBetween(db, startIso, endIso) {
+  return db.prepare('SELECT id, start_at AS startAt, end_at AS endAt, reason FROM appointment_blocks WHERE start_at < ? AND end_at > ? ORDER BY start_at')
+    .all(endIso, startIso);
+}
+
 // Free start times on one salon day for a booking of `minutes`, skipping the
-// customer's own appointment and anything too soon to book.
+// customer's own appointment, blocked times and anything too soon to book.
 function freeSlots(ctx, ymd, minutes, ignoreId) {
   const s = ctx.settings;
   const tz = s.timezone();
   const dow = new Date(ymd + 'T12:00:00Z').getUTCDay();
-  if (!openDays(ctx).has(dow)) return [];
+  if (!openDays(ctx).has(dow) || !bookableDay(ctx, ymd)) return [];
   const open = s.get('appt_open_time') || '10:00';
   const close = s.get('appt_close_time') || '19:00';
   const earliest = Date.now() + Number(s.get('appt_change_cutoff_hours') ?? 2) * 3600000;
   const dayStart = zonedToUtc(ymd, '00:00', tz).toISOString();
   const dayEnd = zonedToUtc(addDays(ymd, 1), '00:00', tz).toISOString();
-  const busy = ctx.db().prepare(`SELECT start_at, end_at FROM appointments WHERE status IN ('booked','confirmed') AND id != ? AND start_at < ? AND end_at > ?`)
-    .all(ignoreId || 0, dayEnd, dayStart).map((r) => [Date.parse(r.start_at), Date.parse(r.end_at)]);
+  const db = ctx.db();
+  const busy = db.prepare(`SELECT start_at, end_at FROM appointments WHERE status IN ('booked','confirmed') AND id != ? AND start_at < ? AND end_at > ?`)
+    .all(ignoreId || 0, dayEnd, dayStart).map((r) => [Date.parse(r.start_at), Date.parse(r.end_at)])
+    .concat(blocksBetween(db, dayStart, dayEnd).map((b) => [Date.parse(b.startAt), Date.parse(b.endAt)]));
   const toMin = (hm) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3));
   const out = [];
   for (let m = toMin(open); m + minutes <= toMin(close); m += 15) {
@@ -76,16 +97,42 @@ function freeSlots(ctx, ymd, minutes, ignoreId) {
   return out;
 }
 
-// The next `count` days the salon is open, from today.
-function upcomingOpenDays(ctx, count = 14) {
-  const days = [];
+// Has the owner blocked the whole of this day's opening hours?
+function dayBlocked(ctx, ymd) {
   const tz = ctx.settings.timezone();
-  let d = businessDate(new Date(), tz);
+  const open = zonedToUtc(ymd, ctx.settings.get('appt_open_time') || '10:00', tz).toISOString();
+  const close = zonedToUtc(ymd, ctx.settings.get('appt_close_time') || '19:00', tz).toISOString();
+  return !!ctx.db().prepare('SELECT 1 FROM appointment_blocks WHERE start_at <= ? AND end_at >= ?').get(open, close);
+}
+
+// One month of the booking calendar: every day with how many times are free.
+// state: past | closed | full | open (closed covers days outside the window).
+function monthDays(ctx, ym, minutes, ignoreId) {
+  const today = businessDate(new Date(), ctx.settings.timezone());
+  const last = lastBookableDay(ctx);
   const open = openDays(ctx);
-  for (let i = 0; i < 60 && days.length < count; i++, d = addDays(d, 1)) {
-    if (open.has(new Date(d + 'T12:00:00Z').getUTCDay())) days.push(d);
+  const out = [];
+  for (let d = ym + '-01'; d.slice(0, 7) === ym; d = addDays(d, 1)) {
+    let state;
+    let free = 0;
+    if (d < today) state = 'past';
+    else if (d > last || !open.has(new Date(d + 'T12:00:00Z').getUTCDay())) state = 'closed';
+    else {
+      free = freeSlots(ctx, d, minutes, ignoreId).length;
+      state = free ? 'open' : dayBlocked(ctx, d) ? 'closed' : 'full';
+    }
+    out.push({ date: d, free, state });
   }
-  return days;
+  return out;
+}
+
+// The first day with a free time, searching the whole booking window.
+function firstFreeDay(ctx, minutes, ignoreId) {
+  const last = lastBookableDay(ctx);
+  for (let d = businessDate(new Date(), ctx.settings.timezone()); d <= last; d = addDays(d, 1)) {
+    if (freeSlots(ctx, d, minutes, ignoreId).length) return d;
+  }
+  return null;
 }
 
 // Can the customer still change this booking themselves?
@@ -95,4 +142,4 @@ function changeable(ctx, a) {
   return Date.parse(a.startAt) - cutoff > Date.now();
 }
 
-module.exports = { makeToken, readToken, customerLink, freeSlots, upcomingOpenDays, changeable, publicBase };
+module.exports = { makeToken, readToken, customerLink, freeSlots, monthDays, firstFreeDay, bookableDay, lastBookableDay, blocksBetween, changeable, publicBase, BOOKING_DAYS };

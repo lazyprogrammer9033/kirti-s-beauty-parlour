@@ -443,14 +443,17 @@ async function appointments(body, { query, rerender }) {
   body.append(card);
 
   const emailReady = s.email_configured === '1';
-  settingsForm(body, s, (f) => [
+  const stagesOn = new Set(String(s.appt_reminder_stages ?? '').split(','));
+  const stageBoxes = [['1w', '1 week before'], ['1d', '1 day before'], ['2h', '2 hours before']].map(([v, l]) => [v, h('input', { type: 'checkbox', checked: stagesOn.has(v) }), l]);
+  const emailInputs = settingsForm(body, s, (f) => [
     emailReady ? null : h('div.alert.warn', icon('alert', 18), h('div', 'Customer emails need your mailbox set up first in ', h('a', { href: '#/settings/email' }, 'Settings › Email'), '.')),
     h('label.check', f('appt_confirm_email', { type: 'checkbox' }), ' Email customers a confirmation when they are booked'),
-    h('div.grid-2',
-      h('label.check.pad-top', f('appt_reminder_email', { type: 'checkbox' }), ' Email customers a reminder before their appointment'),
-      field('Send the reminder', f('appt_reminder_hours', { type: 'select', options: [[2, '2 hours before'], [4, '4 hours before'], [12, '12 hours before'], [24, '1 day before'], [48, '2 days before']] }))),
+    h('label.check', f('appt_reminder_email', { type: 'checkbox' }), ' Email customers reminders before their appointment'),
+    h('div.field', h('span.label', 'Send reminders'), h('div.row', stageBoxes.map(([, box, l]) => h('label.check', box, ' ' + l)))),
     field('Default appointment length (minutes)', f('appt_default_minutes', { inputmode: 'numeric' }), 'Used when the chosen services have no length set.'),
   ], { title: 'Customer emails', intro: 'Only customers with an email address on file get these. You can untick the box on any booking. Customers can tap Confirm, Change time or Cancel (this opens the booking page below when it is on, otherwise a reply to your salon email in Settings › Business) and add the booking to their own calendar.' });
+  // Reminder times are saved with the rest of that form.
+  emailInputs.appt_reminder_stages = { type: 'text', get value() { return stageBoxes.filter(([, b]) => b.checked).map(([v]) => v).join(','); } };
   // Online confirm / cancel / change for customers.
   const openDays = new Set(String(s.appt_open_days ?? '').split(','));
   const dayBoxes = [['1','Mon'],['2','Tue'],['3','Wed'],['4','Thu'],['5','Fri'],['6','Sat'],['0','Sun']].map(([v, l]) => [v, h('input', { type: 'checkbox', checked: openDays.has(v) }), l]);
@@ -464,7 +467,7 @@ async function appointments(body, { query, rerender }) {
       field('Closes', f('appt_close_time', { inputType: 'time' })),
       field('Changes allowed until', f('appt_change_cutoff_hours', { type: 'select', options: [[0, 'Start time'], [2, '2 hours before'], [4, '4 hours before'], [12, '12 hours before'], [24, '1 day before'], [48, '2 days before']] }))),
     h('div.field', h('span.label', 'Open days (for times customers can pick)'), h('div.row', dayBoxes.map(([, box, l]) => h('label.check', box, ' ' + l)))),
-  ], { title: 'Customer booking page', intro: 'Customers can book, confirm, cancel or pick a new free time themselves. You get an email whenever they do, and the app and calendar update themselves.' });
+  ], { title: 'Customer booking page', intro: 'Customers can book, confirm, cancel or pick a new free time themselves, up to a year ahead. They see how many times are free each day. To close a break, a day off or a holiday, use Block time on the Appointments screen. You get an email whenever customers book or change, and the app and calendar update themselves.' });
   // Open days are saved with the rest of that form.
   linkInputs.appt_open_days = { type: 'text', get value() { return dayBoxes.filter(([, b]) => b.checked).map(([v]) => v).join(','); } };
 
@@ -514,6 +517,7 @@ const ACTION_LABELS = {
   'appointment.cancelled': 'Appointment cancelled', 'appointment.confirmed': 'Appointment confirmed', 'appointment.completed': 'Appointment completed',
   'appointment.no_show': 'Appointment no-show', 'calendar.connected': 'Google Calendar connected',
   'calendar.disconnected': 'Google Calendar disconnected', 'calendar.changed': 'Calendar changed',
+  'appointment_block.created': 'Time blocked', 'appointment_block.removed': 'Blocked time removed',
 };
 
 function describe(a) {

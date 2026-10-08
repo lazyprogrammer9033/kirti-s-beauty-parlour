@@ -5,6 +5,7 @@ const { audit } = require('../lib/audit');
 const { nowIso, zonedToUtc, addDays, isValidYmd, isValidHm } = require('../lib/time');
 const { redirectUri } = require('./drive');
 const { getAppointment, listAppointments, emailCustomer, appointmentEmail, localParts } = require('../lib/appointments');
+const { blocksBetween } = require('../lib/customer-links');
 
 const STATUSES = ['booked', 'confirmed', 'completed', 'cancelled', 'no_show'];
 const OPEN = ['booked', 'confirmed'];
@@ -39,9 +40,11 @@ module.exports = function appointmentRoutes(api, ctx) {
     return { customerId, serviceIds: ids, duration, startAt: start.toISOString(), endAt: end.toISOString(), staffUserId, notes: str(body.notes, { max: 1000 }) };
   }
 
+  // Other bookings and blocked times in the way; staff can still book over them.
   function clashes(db, b, ignoreId) {
     return listAppointments(db, `a.status IN ('booked','confirmed') AND a.start_at < ? AND a.end_at > ? AND a.id != ?`, [b.endAt, b.startAt, ignoreId || 0])
-      .map((a) => ({ id: a.id, customerName: a.customerName, startAt: a.startAt, endAt: a.endAt }));
+      .map((a) => ({ id: a.id, customerName: a.customerName, startAt: a.startAt, endAt: a.endAt }))
+      .concat(blocksBetween(db, b.startAt, b.endAt).map((x) => ({ blockId: x.id, customerName: x.reason ? `Blocked (${x.reason})` : 'Blocked time', startAt: x.startAt, endAt: x.endAt })));
   }
 
   function saveServices(db, id, serviceIds, now) {
@@ -98,8 +101,8 @@ module.exports = function appointmentRoutes(api, ctx) {
     }
     const now = nowIso();
     const id = db.transaction(() => {
-      const newId = db.prepare(`INSERT INTO appointments (customer_id, staff_user_id, start_at, end_at, duration_minutes, status, notes, created_by, created_at, updated_at, sync_status)
-        VALUES (?, ?, ?, ?, ?, 'booked', ?, ?, ?, ?, ?)`).run(b.customerId, b.staffUserId, b.startAt, b.endAt, b.duration, b.notes, req.user.id, now, now, ctx.calendar.isConnected() ? 'pending' : null).lastInsertRowid;
+      const newId = db.prepare(`INSERT INTO appointments (customer_id, staff_user_id, start_at, end_at, duration_minutes, status, notes, created_by, created_at, updated_at, scheduled_at, sync_status)
+        VALUES (?, ?, ?, ?, ?, 'booked', ?, ?, ?, ?, ?, ?)`).run(b.customerId, b.staffUserId, b.startAt, b.endAt, b.duration, b.notes, req.user.id, now, now, now, ctx.calendar.isConnected() ? 'pending' : null).lastInsertRowid;
       saveServices(db, newId, b.serviceIds, now);
       audit(db, req, 'appointment.booked', 'appointment', newId, { startAt: b.startAt });
       return newId;
@@ -121,8 +124,9 @@ module.exports = function appointmentRoutes(api, ctx) {
     const now = nowIso();
     db.transaction(() => {
       db.prepare(`UPDATE appointments SET start_at = ?, end_at = ?, duration_minutes = ?, staff_user_id = ?, notes = ?, updated_at = ?,
-          reminder_sent_at = CASE WHEN ? THEN NULL ELSE reminder_sent_at END WHERE id = ?`)
-        .run(b.startAt, b.endAt, b.duration, b.staffUserId, b.notes, now, moved ? 1 : 0, id);
+          reminder_sent_at = CASE WHEN ? THEN NULL ELSE reminder_sent_at END, reminders_sent = CASE WHEN ? THEN NULL ELSE reminders_sent END,
+          scheduled_at = CASE WHEN ? THEN ? ELSE scheduled_at END WHERE id = ?`)
+        .run(b.startAt, b.endAt, b.duration, b.staffUserId, b.notes, now, moved ? 1 : 0, moved ? 1 : 0, moved ? 1 : 0, now, id);
       saveServices(db, id, b.serviceIds, now);
       audit(db, req, moved ? 'appointment.rescheduled' : 'appointment.updated', 'appointment', id, moved ? { from: before.start_at, to: b.startAt } : {});
     })();
@@ -152,6 +156,63 @@ module.exports = function appointmentRoutes(api, ctx) {
       if (e.expose) throw e;
       throw new HttpError(502, 'Could not send: ' + e.message);
     }
+    res.json({ ok: true });
+  });
+
+  // ---------- Blocked times (closed for online booking) ----------
+  // ?from=YYYY-MM-DD&to=YYYY-MM-DD, salon days inclusive.
+  api.get('/appointment-blocks', view, (req, res) => {
+    const tz = ctx.settings.timezone();
+    const from = isValidYmd(req.query.from) ? req.query.from : null;
+    const to = isValidYmd(req.query.to) ? req.query.to : from;
+    if (!from || to < from || to > addDays(from, 400)) throw new HttpError(400, 'Please choose a date range');
+    const rows = blocksBetween(ctx.db(), zonedToUtc(from, '00:00', tz).toISOString(), zonedToUtc(addDays(to, 1), '00:00', tz).toISOString());
+    res.json(rows.map((x) => ({ ...x, ...blockLocal(x, tz) })));
+  });
+
+  // The block's first and last salon day and times, for showing it.
+  function blockLocal(x, tz) {
+    const s = localParts(x.startAt, tz);
+    const e = localParts(x.endAt, tz);
+    const allDay = s.time === '00:00' && e.time === '00:00';
+    return { fromDate: s.date, fromTime: s.time, toDate: allDay ? addDays(e.date, -1) : e.date, toTime: e.time, allDay };
+  }
+
+  // { fromDate, toDate?, allDay } or { fromDate, fromTime, toTime } (one day).
+  api.post('/appointment-blocks', manage, (req, res) => {
+    const b = req.body || {};
+    const tz = ctx.settings.timezone();
+    if (!isValidYmd(b.fromDate)) throw new HttpError(400, 'Please choose a date');
+    const toDate = b.toDate ? b.toDate : b.fromDate;
+    if (!isValidYmd(toDate) || toDate < b.fromDate) throw new HttpError(400, 'The end date must be on or after the start date');
+    if (toDate > addDays(b.fromDate, 366)) throw new HttpError(400, 'Please block up to a year at a time');
+    let start;
+    let end;
+    if (b.allDay) {
+      start = zonedToUtc(b.fromDate, '00:00', tz);
+      end = zonedToUtc(addDays(toDate, 1), '00:00', tz);
+    } else {
+      if (!isValidHm(b.fromTime) || !isValidHm(b.toTime)) throw new HttpError(400, 'Please choose the times');
+      start = zonedToUtc(b.fromDate, b.fromTime, tz);
+      end = zonedToUtc(toDate, b.toTime, tz);
+      if (end <= start) throw new HttpError(400, 'The end time must be after the start time');
+    }
+    const reason = str(b.reason, { max: 120 }) || null;
+    const db = ctx.db();
+    const id = db.prepare('INSERT INTO appointment_blocks (start_at, end_at, reason, created_by, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(start.toISOString(), end.toISOString(), reason, req.user.id, nowIso()).lastInsertRowid;
+    audit(db, req, 'appointment_block.created', 'appointment_block', id, { startAt: start.toISOString(), endAt: end.toISOString(), reason });
+    const row = db.prepare('SELECT id, start_at AS startAt, end_at AS endAt, reason FROM appointment_blocks WHERE id = ?').get(id);
+    res.status(201).json({ ...row, ...blockLocal(row, tz) });
+  });
+
+  api.delete('/appointment-blocks/:id', manage, (req, res) => {
+    const db = ctx.db();
+    const id = intParam(req.params.id);
+    const row = db.prepare('SELECT * FROM appointment_blocks WHERE id = ?').get(id);
+    if (!row) throw new HttpError(404, 'Blocked time not found');
+    db.prepare('DELETE FROM appointment_blocks WHERE id = ?').run(id);
+    audit(db, req, 'appointment_block.removed', 'appointment_block', id, { startAt: row.start_at, endAt: row.end_at, reason: row.reason });
     res.json({ ok: true });
   });
 

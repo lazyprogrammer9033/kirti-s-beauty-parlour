@@ -77,30 +77,47 @@ async function emailCustomer(ctx, a, kind) {
   return true;
 }
 
+// How long before the appointment each reminder goes out.
+const REMINDER_STAGES = { '1w': 7 * 86400000, '1d': 86400000, '2h': 2 * 3600000 };
+
 // Sends reminder emails and retries calendar copies that failed. Runs on a timer.
 class AppointmentScheduler {
   constructor(ctx) {
     this.ctx = ctx;
   }
 
+  // Reminder emails go out a week, a day and two hours before (whichever the
+  // owner has switched on). A reminder whose window had already started when
+  // the booking was made or moved is skipped: the confirmation covered it.
+  // If several are due at once (the computer was off), only the latest goes.
   async sendReminders(now = new Date()) {
     const s = this.ctx.settings;
     if (s.get('appt_reminder_email') !== '1' || !this.ctx.mailer.configured()) return 0;
-    const hours = Number(s.get('appt_reminder_hours') || 24);
+    const on = String(s.get('appt_reminder_stages') ?? '1w,1d,2h').split(',').filter((k) => REMINDER_STAGES[k]);
+    if (!on.length) return 0;
     const db = this.ctx.db();
-    const windowEnd = new Date(now.getTime() + hours * 3600000).toISOString();
-    const due = listAppointments(db, `a.status IN ('booked','confirmed') AND a.reminder_sent_at IS NULL AND c.email IS NOT NULL AND c.email != ''
-      AND a.start_at > ? AND a.start_at <= ?`, [now.toISOString(), windowEnd]);
+    const widest = Math.max(...on.map((k) => REMINDER_STAGES[k]));
+    const due = listAppointments(db, `a.status IN ('booked','confirmed') AND c.email IS NOT NULL AND c.email != ''
+      AND a.start_at > ? AND a.start_at <= ?`, [now.toISOString(), new Date(now.getTime() + widest).toISOString()]);
+    const t = now.getTime();
     let sent = 0;
     for (const a of due) {
-      // Booked inside the reminder window: the confirmation email is reminder enough.
-      const bookedLate = new Date(a.createdAt).getTime() > new Date(a.startAt).getTime() - hours * 3600000;
+      const row = db.prepare('SELECT reminders_sent, COALESCE(scheduled_at, created_at) AS scheduledAt FROM appointments WHERE id = ?').get(a.id);
+      const done = new Set(String(row.reminders_sent || '').split(',').filter(Boolean));
+      const start = Date.parse(a.startAt);
+      const open = on.filter((k) => !done.has(k) && start - REMINDER_STAGES[k] <= t);
+      if (!open.length) continue;
+      // The closest one to the appointment is the one worth sending.
+      const stage = open.reduce((x, y) => (REMINDER_STAGES[x] < REMINDER_STAGES[y] ? x : y));
+      const coveredByBooking = Date.parse(row.scheduledAt) > start - REMINDER_STAGES[stage];
       try {
-        if (!bookedLate) {
-          await emailCustomer(this.ctx, a, 'reminder');
+        if (!coveredByBooking) {
+          await emailCustomer(this.ctx, { ...a, sendingAt: now }, 'reminder');
           sent++;
         }
-        db.prepare('UPDATE appointments SET reminder_sent_at = ? WHERE id = ?').run(bookedLate ? 'skipped' : nowIso(), a.id);
+        for (const k of open) done.add(k);
+        db.prepare('UPDATE appointments SET reminders_sent = ?, reminder_sent_at = ? WHERE id = ?')
+          .run(Object.keys(REMINDER_STAGES).filter((k) => done.has(k)).join(','), coveredByBooking ? a.reminderSentAt || 'skipped' : now.toISOString(), a.id);
       } catch (e) {
         console.error('Appointment reminder failed:', e.message);
       }
@@ -130,4 +147,4 @@ function localParts(iso, tz) {
   return { date: businessDate(d, tz), time: localTime(d, tz) };
 }
 
-module.exports = { getAppointment, listAppointments, emailCustomer, appointmentEmail, notifySalon, AppointmentScheduler, localParts };
+module.exports = { REMINDER_STAGES, getAppointment, listAppointments, emailCustomer, appointmentEmail, notifySalon, AppointmentScheduler, localParts };

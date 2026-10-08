@@ -149,3 +149,53 @@ test('anyone can book online with the Book now link once it is switched on', asy
   assert.equal((await owner.get(`/api/appointments?customerId=${cust.id}`)).data.length, 2);
   assert.equal((await owner.get('/api/customers/search?q=4165550303')).data.length, 1);
 });
+
+test('the owner blocks times; customers see free times per day up to a year ahead', async () => {
+  const owner = t.client();
+  await owner.post('/api/auth/login', { username: 'kirti', password: 'Secret-pass-1' });
+  const brows = (await owner.get('/api/services')).data.flatMap((c) => c.services).find((s) => s.name === 'Eyebrows');
+  const times = async (date) => (await get(`/book/time?s=${brows.id}&date=${date}`)).text();
+
+  // A month calendar shows the free times for each day.
+  let html = await times(day(8));
+  assert.match(html, /\d+ free/);
+  assert.match(html, /value="13:00"/);
+
+  // Lunch blocked on one day; the whole of another day closed.
+  const lunch = await owner.post('/api/appointment-blocks', { fromDate: day(8), fromTime: '13:00', toTime: '14:00', reason: 'Lunch' });
+  assert.equal(lunch.status, 201);
+  assert.equal(lunch.data.allDay, false);
+  html = await times(day(8));
+  assert.doesNotMatch(html, /value="13:00"|value="13:45"/);
+  assert.match(html, /value="12:45"/);
+  assert.match(html, /value="14:00"/);
+  assert.equal((await post('/book', { s: `${brows.id}`, date: day(8), time: '13:15', name: 'Neha Jain', phone: '4165550505' })).status, 409);
+
+  const holiday = (await owner.post('/api/appointment-blocks', { fromDate: day(9), toDate: day(10), allDay: true, reason: 'Holiday' })).data;
+  assert.equal(holiday.toDate, day(10));
+  html = await times(day(9));
+  assert.match(html, /No free times on/);
+  assert.doesNotMatch(html, /name="time"/);
+  assert.equal((await post('/book', { s: `${brows.id}`, date: day(10), time: '11:00', name: 'Neha Jain', phone: '4165550505' })).status, 409);
+  const list = (await owner.get(`/api/appointment-blocks?from=${day(8)}&to=${day(10)}`)).data;
+  assert.equal(list.length, 2);
+  assert.ok(!(await times(day(9))).includes('Holiday'), 'the reason is not shown to customers');
+
+  // Staff get a warning but can still book over a block.
+  const cust = (await owner.post('/api/customers', { fullName: 'Ritu Das', phone: '4165550606' })).data;
+  const clash = await owner.post('/api/appointments', { customerId: cust.id, date: day(8), time: '13:00' });
+  assert.equal(clash.status, 409);
+  assert.match(clash.data.overlaps[0].customerName, /Blocked \(Lunch\)/);
+
+  // Removing the block opens the time again.
+  assert.equal((await owner.del(`/api/appointment-blocks/${lunch.data.id}`)).status, 200);
+  assert.match(await times(day(8)), /value="13:00"/);
+
+  // Bookings open a year ahead, and no further.
+  html = await times(day(300));
+  assert.match(html, /value="10:00"/);
+  assert.equal((await post('/book', { s: `${brows.id}`, date: day(300), time: '10:00', name: 'Neha Jain', phone: '4165550505' })).status, 303);
+  assert.equal((await post('/book', { s: `${brows.id}`, date: day(380), time: '10:00', name: 'Neha Jain', phone: '4165550505' })).status, 409);
+  assert.equal((await get(`/book/time?s=${brows.id}&month=2099-01`)).status, 200);
+});
+

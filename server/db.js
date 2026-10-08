@@ -84,7 +84,7 @@ const DEFAULT_SETTINGS = {
   appt_default_minutes: '30',
   appt_confirm_email: '1',
   appt_reminder_email: '1',
-  appt_reminder_hours: '24',
+  appt_reminder_stages: '1w,1d,2h',
   // Customer links stay off until the owner sets up the public address.
   public_base_url: '',
   appt_customer_links: '0',

@@ -326,4 +326,26 @@ CREATE INDEX idx_appointment_services_appt ON appointment_services(appointment_i
 CREATE INDEX idx_visits_appointment ON visits(appointment_id) WHERE appointment_id IS NOT NULL;
 `,
   },
+  {
+    id: 4,
+    name: 'appointment blocks and reminder stages',
+    // appointment_blocks: times the owner has closed for online booking (a
+    // break, a holiday). reminders_sent lists the reminder emails already
+    // handled ("1w,1d,2h"); scheduled_at is when the current time was set, so
+    // a booking made inside a reminder's window doesn't get that reminder too.
+    sql: `
+CREATE TABLE appointment_blocks (
+  id INTEGER PRIMARY KEY,
+  start_at TEXT NOT NULL,
+  end_at TEXT NOT NULL,
+  reason TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_appointment_blocks_time ON appointment_blocks(start_at, end_at);
+ALTER TABLE appointments ADD COLUMN reminders_sent TEXT;
+ALTER TABLE appointments ADD COLUMN scheduled_at TEXT;
+UPDATE appointments SET reminders_sent = '1w,1d' WHERE reminder_sent_at IS NOT NULL;
+`,
+  },
 ];

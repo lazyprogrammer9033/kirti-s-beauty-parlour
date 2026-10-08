@@ -1,6 +1,6 @@
 'use strict';
 
-const { freeSlots, upcomingOpenDays, makeToken } = require('./lib/customer-links');
+const { freeSlots, makeToken } = require('./lib/customer-links');
 const { getAppointment, emailCustomer, notifySalon } = require('./lib/appointments');
 const { nextCustomerCode } = require('./lib/codes');
 const { normalizePhone, formatPhone } = require('./lib/phone');
@@ -12,7 +12,7 @@ const { nowIso, zonedToUtc, isValidYmd, isValidHm } = require('./lib/time');
 // the app and the calendar like any other, and the salon gets an email.
 // Off until the owner turns on online booking in Settings › Appointments.
 
-function bookingRoutes(app, ctx, { page, esc, salonTz, dayLabel, timeLabel, RateLimiter }) {
+function bookingRoutes(app, ctx, { page, esc, salonTz, timeLabel, slotPicker, RateLimiter }) {
   const bookLimiter = new RateLimiter(5, 60 * 60 * 1000); // 5 bookings an hour per visitor
   const enabled = () => ctx.settings.get('appt_online_booking') === '1' && !!ctx.settings.get('public_base_url');
 
@@ -53,14 +53,9 @@ function bookingRoutes(app, ctx, { page, esc, salonTz, dayLabel, timeLabel, Rate
     if (!enabled()) return closed(res);
     const c = chosen(sParam(req.query));
     if (!c.services.length) return res.redirect(303, '/book');
-    const days = upcomingOpenDays(ctx, 21).filter((d) => freeSlots(ctx, d, c.minutes).length);
-    const day = isValidYmd(req.query.date) && days.includes(req.query.date) ? req.query.date : days[0];
-    const slots = day ? freeSlots(ctx, day, c.minutes) : [];
-    page(res, 'Pick a time', `<h1>Pick a time</h1><p class="muted">${esc(c.services.map((s) => s.name).join(', '))} · ${c.minutes} min</p>
-${days.length ? `<div class="days">${days.map((d) => `<a class="chip${d === day ? ' on' : ''}" href="/book/time?s=${c.key}&amp;date=${d}">${esc(dayLabel(d))}</a>`).join('')}</div>
-<form method="get" action="/book/details"><input type="hidden" name="s" value="${c.key}"><input type="hidden" name="date" value="${esc(day)}"><div class="times">${slots
-  .map((t) => `<button class="chip" type="submit" name="time" value="${t}">${esc(timeLabel(t))}</button>`).join('')}</div></form>`
-    : '<div class="note bad">There are no free times online in the next three weeks. Please call us.</div>'}
+    const link = (p) => `/book/time?${new URLSearchParams({ s: c.key, ...p })}`;
+    page(res, 'Pick a time', `<h1>Pick a day and time</h1><p class="muted">${esc(c.services.map((s) => s.name).join(', '))} · ${c.minutes} min</p>
+${slotPicker({ query: req.query, minutes: c.minutes, link, form: '<form method="get" action="/book/details">', hidden: `<input type="hidden" name="s" value="${c.key}">` })}
 <a class="btn" href="/book?s=${c.key}">Back</a>`);
   });
 
@@ -103,7 +98,7 @@ ${error ? `<div class="note bad">${esc(error)}</div>` : ''}
     if (name.length < 2) return detailsForm(res, c, date, time, values, 'Please enter your name.');
     if (phoneDigits.length < 10 || phoneDigits.length > 15) return detailsForm(res, c, date, time, values, 'Please enter your mobile number with area code.');
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return detailsForm(res, c, date, time, values, 'Please check your email address.');
-    if (!upcomingOpenDays(ctx, 21).includes(date) || !freeSlots(ctx, date, c.minutes).includes(time)) {
+    if (!freeSlots(ctx, date, c.minutes).includes(time)) {
       return page(res, 'Pick a time', `<h1>That time was just taken</h1><p>Please pick another time.</p><a class="btn primary" href="/book/time?s=${c.key}&amp;date=${esc(date)}">See free times</a>`, 409);
     }
     if (!bookLimiter.hit(req.get('cf-connecting-ip') || req.ip)) return page(res, 'Book', '<h1>Please call us</h1><p>We received several bookings from this device. Please call us to book more.</p>', 429);
@@ -127,8 +122,8 @@ ${error ? `<div class="note bad">${esc(error)}</div>` : ''}
         audit(db, { user: null, ip: req.ip }, 'customer.created', 'customer', cid, { customerCode: code, by: 'online booking' });
       }
       const apptNotes = [notes, extraNote].filter(Boolean).join(' ') || null;
-      const aid = db.prepare(`INSERT INTO appointments (customer_id, start_at, end_at, duration_minutes, status, notes, created_at, updated_at, sync_status)
-        VALUES (?, ?, ?, ?, 'booked', ?, ?, ?, ?)`).run(customer.id, start.toISOString(), end.toISOString(), c.minutes, apptNotes, now, now, ctx.calendar.isConnected() ? 'pending' : null).lastInsertRowid;
+      const aid = db.prepare(`INSERT INTO appointments (customer_id, start_at, end_at, duration_minutes, status, notes, created_at, updated_at, scheduled_at, sync_status)
+        VALUES (?, ?, ?, ?, 'booked', ?, ?, ?, ?, ?)`).run(customer.id, start.toISOString(), end.toISOString(), c.minutes, apptNotes, now, now, now, ctx.calendar.isConnected() ? 'pending' : null).lastInsertRowid;
       const ins = db.prepare('INSERT INTO appointment_services (appointment_id, service_id, created_at, updated_at) VALUES (?, ?, ?, ?)');
       for (const s of c.services) ins.run(aid, s.id, now, now);
       audit(db, { user: null, ip: req.ip }, 'appointment.booked', 'appointment', aid, { by: 'online booking', startAt: start.toISOString() });

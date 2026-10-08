@@ -142,12 +142,74 @@ test('reminder emails go out once, inside the reminder window', async () => {
   const cust = (await owner.post('/api/customers', { fullName: 'Meera Rao', phone: '4165550202', email: 'meera@example.com' })).data;
   const a = (await owner.post('/api/appointments', { customerId: cust.id, date: tomorrow(), time: '11:00', durationMinutes: 30 })).data;
   // Pretend it was booked a week ago, so a reminder is due.
-  t.ctx.db().prepare('UPDATE appointments SET created_at = ? WHERE id = ?').run(new Date(Date.now() - 7 * 86400000).toISOString(), a.id);
+  t.ctx.db().prepare('UPDATE appointments SET created_at = ?, scheduled_at = ? WHERE id = ?').run(new Date(Date.now() - 7 * 86400000).toISOString(), new Date(Date.now() - 7 * 86400000).toISOString(), a.id);
   const now = new Date(new Date(a.startAt).getTime() - 20 * 3600000);
   assert.equal(await t.ctx.appointments.sendReminders(now), 1);
   assert.equal(await t.ctx.appointments.sendReminders(now), 0);
   assert.match(sent.at(-1).subject, /^Reminder/);
   assert.equal(sent.at(-1).to, 'meera@example.com');
+});
+
+test('reminders go out a week, a day and two hours before, skipping any the booking already covered', async () => {
+  const sent = [];
+  t.ctx.mailer.transportOverride = { sendMail: async (m) => sent.push(m) };
+  const owner = t.client();
+  await owner.post('/api/auth/login', { username: 'kirti', password: 'Secret-pass-1' });
+  const db = t.ctx.db();
+  const cust = (await owner.post('/api/customers', { fullName: 'Lata Iyer', phone: '4165550909', email: 'lata@example.com' })).data;
+  const book = async (n) => (await owner.post('/api/appointments', { customerId: cust.id, date: addDays(tomorrow(), n), time: '15:00', durationMinutes: 30, confirmOverlap: true })).data;
+  const at = (a, ms) => new Date(Date.parse(a.startAt) - ms);
+  const H = 3600000;
+  const D = 24 * H;
+  const run = async (now) => {
+    const before = sent.length;
+    await t.ctx.appointments.sendReminders(now);
+    return sent.slice(before).filter((m) => m.to === 'lata@example.com');
+  };
+
+  // Booked a month ahead: all three go out, once each.
+  const a = await book(30);
+  db.prepare('UPDATE appointments SET scheduled_at = ? WHERE id = ?').run(new Date(Date.parse(a.startAt) - 30 * D).toISOString(), a.id);
+  assert.equal((await run(at(a, 8 * D))).length, 0);
+  let out = await run(at(a, 7 * D - 60000));
+  assert.equal(out.length, 1);
+  assert.match(out[0].html, /See you on/);
+  assert.equal((await run(at(a, 6 * D))).length, 0);
+  out = await run(at(a, 23 * H));
+  assert.equal(out.length, 1);
+  assert.match(out[0].subject, /^Reminder/);
+  out = await run(at(a, 90 * 60000));
+  assert.equal(out.length, 1);
+  assert.match(out[0].html, /See you today/);
+  assert.equal((await run(at(a, 30 * 60000))).length, 0);
+  assert.equal(db.prepare('SELECT reminders_sent FROM appointments WHERE id = ?').get(a.id).reminders_sent, '1w,1d,2h');
+
+  // Booked three days ahead: the week reminder is skipped, the others go out.
+  const b = await book(31);
+  db.prepare('UPDATE appointments SET scheduled_at = ? WHERE id = ?').run(new Date(Date.parse(b.startAt) - 3 * D).toISOString(), b.id);
+  assert.equal((await run(at(b, 2 * D))).length, 0);
+  assert.equal((await run(at(b, 20 * H))).length, 1);
+  assert.equal((await run(at(b, H))).length, 1);
+
+  // The computer was off: only the closest reminder is sent, not all of them.
+  const c = await book(32);
+  db.prepare('UPDATE appointments SET scheduled_at = ? WHERE id = ?').run(new Date(Date.parse(c.startAt) - 30 * D).toISOString(), c.id);
+  assert.equal((await run(at(c, H))).length, 1);
+  assert.equal((await run(at(c, 30 * 60000))).length, 0);
+
+  // Moving a booking starts its reminders again.
+  await owner.put(`/api/appointments/${a.id}`, { date: addDays(tomorrow(), 40), time: '15:00', durationMinutes: 30, confirmOverlap: true });
+  assert.equal(db.prepare('SELECT reminders_sent FROM appointments WHERE id = ?').get(a.id).reminders_sent, null);
+
+  // The owner can turn single reminders off.
+  await owner.put('/api/settings', { appt_reminder_stages: '1d' });
+  const d = await book(33);
+  db.prepare('UPDATE appointments SET scheduled_at = ? WHERE id = ?').run(new Date(Date.parse(d.startAt) - 30 * D).toISOString(), d.id);
+  assert.equal((await run(at(d, 7 * D - 60000))).length, 0);
+  assert.equal((await run(at(d, 20 * H))).length, 1);
+  assert.equal((await run(at(d, H))).length, 0);
+  assert.equal((await owner.put('/api/settings', { appt_reminder_stages: '3h' })).status, 400);
+  await owner.put('/api/settings', { appt_reminder_stages: '1w,1d,2h' });
 });
 
 test('staff can book; only the owner manages the calendar link', async () => {

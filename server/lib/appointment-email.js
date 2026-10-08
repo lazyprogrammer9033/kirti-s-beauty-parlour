@@ -77,6 +77,15 @@ const SUBJECTS = {
   cancelled: (n, w) => `Your appointment at ${n} on ${w.date} is cancelled`,
 };
 const HEADINGS = { confirmation: 'You’re booked in', updated: 'Your appointment has moved', reminder: 'See you soon', cancelled: 'Your appointment is cancelled' };
+// "See you tomorrow" etc., from the salon's calendar days, for reminders.
+function reminderHeading(startAt, tz, now = new Date()) {
+  const ymd = (d) => d.toLocaleDateString('en-CA', { timeZone: tz });
+  const day = ymd(new Date(startAt));
+  if (day === ymd(now)) return 'See you today';
+  if (day === ymd(new Date(now.getTime() + 86400000))) return 'See you tomorrow';
+  return 'See you on ' + new Date(startAt).toLocaleDateString('en-CA', { timeZone: tz, weekday: 'long' });
+}
+
 const INTROS = {
   confirmation: 'Thank you for booking with us. Here are your appointment details.',
   updated: 'Your appointment has a new date or time. Here are the updated details.',
@@ -94,6 +103,7 @@ function buildAppointmentEmail(a, kind, salon) {
   const services = a.services.map((s) => s.name).join(', ');
   const ref = `#${a.id}`;
   const active = kind !== 'cancelled';
+  const heading = kind === 'reminder' ? reminderHeading(a.startAt, salon.timezone, a.sendingAt) : HEADINGS[kind];
   const replyBody = (verb) => `Hi ${salon.name},\n\n${verb}\n\nAppointment ${ref}: ${w.date} at ${w.time}${services ? ' (' + services + ')' : ''}\n\nThank you,\n${a.customerName}`;
 
   const actions = [];
@@ -126,7 +136,7 @@ function buildAppointmentEmail(a, kind, salon) {
 ${logo}<div style="font-family:Georgia,'Times New Roman',serif;font-size:22px;color:${COLORS.primary};">${esc(salon.name)}</div>
 </td></tr>
 <tr><td style="padding:12px 28px 0;">
-<h1 style="margin:0 0 8px;font-family:Georgia,'Times New Roman',serif;font-weight:normal;font-size:28px;color:${COLORS.ink};">${esc(HEADINGS[kind])}</h1>
+<h1 style="margin:0 0 8px;font-family:Georgia,'Times New Roman',serif;font-weight:normal;font-size:28px;color:${COLORS.ink};">${esc(heading)}</h1>
 <p style="margin:0 0 4px;font-size:15px;line-height:1.5;color:${COLORS.ink};">Hi ${esc(first)},</p>
 <p style="margin:0 0 18px;font-size:15px;line-height:1.5;color:${COLORS.ink};">${esc(INTROS[kind])}</p>
 <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background:${COLORS.soft};border-radius:14px;"><tr><td style="padding:14px 18px;">

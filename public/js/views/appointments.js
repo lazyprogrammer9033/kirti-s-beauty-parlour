@@ -35,7 +35,9 @@ export async function render(view, { params, query }) {
   const strip = h('div.week-strip');
   clear(view,
     pageHeader('Appointments', session.settings.calendar_connected === '1' ? 'Bookings are copied to your Google Calendar.' : 'Book, reschedule and cancel.',
-      h('button.btn.primary', { type: 'button', onclick: () => bookingModal({ date: day }).then((a) => a && go(a.date)) }, icon('plus', 18), 'Book appointment')),
+      h('div.row',
+        h('button.btn.ghost', { type: 'button', onclick: () => blockModal(day).then((b) => b && go(b.fromDate)) }, icon('clock', 18), 'Block time'),
+        h('button.btn.primary', { type: 'button', onclick: () => bookingModal({ date: day }).then((a) => a && go(a.date)) }, icon('plus', 18), 'Book appointment'))),
     h('div.card.stack',
       h('div.week-nav',
         h('button.icon-btn', { type: 'button', 'aria-label': 'Previous week', onclick: () => go(addDays(day, -7)) }, icon('chevronLeft')),
@@ -45,21 +47,28 @@ export async function render(view, { params, query }) {
       strip),
     list);
 
-  const all = await api.get(`/appointments?from=${start}&to=${end}`);
+  const [all, blocks] = await Promise.all([api.get(`/appointments?from=${start}&to=${end}`), api.get(`/appointment-blocks?from=${start}&to=${end}`)]);
   const active = all.filter((a) => a.status !== 'cancelled');
+  const blockedOn = (d) => blocks.filter((b) => b.fromDate <= d && b.toDate >= d);
   clear(strip, Array.from({ length: 7 }, (_, i) => {
     const d = addDays(start, i);
     const n = active.filter((a) => a.date === d).length;
     return h('button.week-day' + (d === day ? '.on' : '') + (d === todayYmd() ? '.today' : ''), { type: 'button', onclick: () => go(d) },
-      h('span.wd-name', dayName(d)), h('span.wd-num', String(dayNum(d))), h('span.wd-count', n ? `${n}` : ''));
+      h('span.wd-name', dayName(d)), h('span.wd-num', String(dayNum(d))), h('span.wd-count', n ? `${n}` : blockedOn(d).some((b) => b.allDay) ? 'Closed' : ''));
   }));
 
   const rows = all.filter((a) => a.date === day);
+  const blockCards = blockedOn(day).map((b) => h('button.appt-card.block-card', { type: 'button', onclick: () => removeBlock(b, () => render(view, { params, query })) },
+    h('div.appt-time', icon('clock', 20)),
+    h('div.grow',
+      h('div.appt-name', b.allDay ? 'Closed all day' : `Blocked ${fmtTime(b.startAt)} to ${fmtTime(b.endAt)}`),
+      h('div.muted.small', [b.reason, b.fromDate !== b.toDate ? `${fmtYmd(b.fromDate)} to ${fmtYmd(b.toDate)}` : null, 'Customers can’t book online at this time'].filter(Boolean).join(' · '))),
+    icon('x', 20)));
   if (!rows.length) {
-    clear(list, h('div.card', emptyState('calendar', 'No appointments', `Nothing booked for ${dayName(day, 'long')}.`,
+    clear(list, blockCards, h('div.card', emptyState('calendar', 'No appointments', `Nothing booked for ${dayName(day, 'long')}.`,
       h('button.btn.primary', { type: 'button', onclick: () => bookingModal({ date: day }).then((a) => a && go(a.date)) }, icon('plus', 18), 'Book appointment'))));
   } else {
-    clear(list, rows.map((a) => h('button.appt-card' + (['cancelled', 'no_show'].includes(a.status) ? '.dim' : ''), { type: 'button', onclick: () => detailsModal(a, () => render(view, { params, query })) },
+    clear(list, blockCards, rows.map((a) => h('button.appt-card' + (['cancelled', 'no_show'].includes(a.status) ? '.dim' : ''), { type: 'button', onclick: () => detailsModal(a, () => render(view, { params, query })) },
       h('div.appt-time', h('strong', fmtTime(a.startAt)), h('span.muted.small', fmtTime(a.endAt))),
       h('div.grow',
         h('div.appt-name', a.customerName, apptBadge(a.status)),
@@ -69,6 +78,68 @@ export async function render(view, { params, query }) {
       icon('chevronRight', 20))));
   }
   if (query.get('book')) bookingModal({ date: day, customerId: Number(query.get('book')) }).then((a) => a && go(a.date));
+}
+
+// Close a break, a day off or a holiday so customers can't book it online.
+// Bookings made in the app can still go there (after a warning).
+function blockModal(day) {
+  return new Promise((resolve) => {
+    let saved = null;
+    const fromDate = h('input.input', { type: 'date', value: day });
+    const toDate = h('input.input', { type: 'date', value: day });
+    const allDay = h('input', { type: 'checkbox', checked: true });
+    const fromTime = h('input.input', { type: 'time', value: '13:00', step: 900 });
+    const toTime = h('input.input', { type: 'time', value: '14:00', step: 900 });
+    const reason = h('input.input', { maxlength: 120, placeholder: 'Lunch, holiday, day off…' });
+    const times = h('div.grid-2', field('From', fromTime), field('To', toTime));
+    const toField = field('Until', toDate);
+    const err = h('p.error-text');
+    const sync = () => {
+      times.hidden = allDay.checked;
+      toField.hidden = !allDay.checked;
+    };
+    allDay.addEventListener('change', sync);
+    fromDate.addEventListener('change', () => { if (toDate.value < fromDate.value) toDate.value = fromDate.value; });
+    sync();
+    const btn = h('button.btn.primary', { type: 'button', onclick: async () => {
+      btn.disabled = true;
+      err.textContent = '';
+      try {
+        saved = await api.post('/appointment-blocks', allDay.checked
+          ? { fromDate: fromDate.value, toDate: toDate.value || fromDate.value, allDay: true, reason: reason.value }
+          : { fromDate: fromDate.value, fromTime: fromTime.value, toTime: toTime.value, reason: reason.value });
+        toast(saved.allDay ? 'Closed for online booking' : 'Time blocked');
+        m.close();
+      } catch (e) {
+        err.textContent = e.message;
+        btn.disabled = false;
+      }
+    } }, 'Block');
+    const m = modal({
+      title: 'Block time',
+      body: h('div.stack',
+        h('p.muted.small', 'Customers won’t see these times on the online booking page. Bookings already made are not changed.'),
+        h('div.grid-2', field('Date', fromDate), toField),
+        h('label.check', allDay, ' All day'),
+        times,
+        field('Reason (only you see this)', reason),
+        err),
+      actions: [h('button.btn.ghost', { type: 'button', onclick: () => m.close() }, 'Cancel'), btn],
+      onClose: () => resolve(saved),
+    });
+  });
+}
+
+async function removeBlock(b, onChange) {
+  const what = b.allDay ? (b.fromDate === b.toDate ? fmtYmd(b.fromDate) : `${fmtYmd(b.fromDate)} to ${fmtYmd(b.toDate)}`) : `${fmtYmd(b.fromDate)}, ${fmtTime(b.startAt)} to ${fmtTime(b.endAt)}`;
+  if (!(await confirmDialog({ title: 'Open this time again?', message: `${what}${b.reason ? ' (' + b.reason + ')' : ''} will be available for online booking again.`, confirmLabel: 'Remove block' }))) return;
+  try {
+    await api.del('/appointment-blocks/' + b.id);
+    toast('Block removed');
+    onChange();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 // Details + actions for one booking.
@@ -253,7 +324,7 @@ export function bookingModal({ appointment, date, customerId } = {}) {
         save.disabled = false;
         if (e.status === 409 && e.data.overlaps) {
           const names = e.data.overlaps.map((o) => `${o.customerName} (${fmtTime(o.startAt)}–${fmtTime(o.endAt)})`).join(', ');
-          if (await confirmDialog({ title: 'This time overlaps', message: `Already booked: ${names}. Book anyway?`, confirmLabel: 'Book anyway' })) submit(true);
+          if (await confirmDialog({ title: 'This time overlaps', message: `Already taken: ${names}. Book anyway?`, confirmLabel: 'Book anyway' })) submit(true);
           return;
         }
         err.textContent = e.message;

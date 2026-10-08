@@ -100,10 +100,10 @@ const EDITABLE = {
   },
   appt_confirm_email: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
   appt_reminder_email: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
-  appt_reminder_hours: (v) => {
-    const n = Number(v);
-    if (![2, 4, 12, 24, 48].includes(n)) throw new HttpError(400, 'Choose when to send reminders');
-    return String(n);
+  appt_reminder_stages: (v) => {
+    const list = Array.isArray(v) ? v : String(v || '').split(',').filter(Boolean);
+    if (list.some((x) => !['1w', '1d', '2h'].includes(x))) throw new HttpError(400, 'Choose when to send reminders');
+    return ['1w', '1d', '2h'].filter((x) => list.includes(x)).join(',');
   },
 };
 

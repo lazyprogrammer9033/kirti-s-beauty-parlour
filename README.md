@@ -88,9 +88,9 @@ Uses the same Google app as step 4.
 3. Pick which calendar bookings go into. Bookings made, moved or cancelled in the app are copied to it (changes made in Google Calendar are not copied back). If the internet is down, the app keeps the booking and copies it later.
 4. To change account or calendar later, use **Use a different Google account** or the calendar picker on the same page; upcoming bookings move across.
 
-Confirmation and reminder emails to customers go out from the mailbox set up in step 6.
+Confirmation and reminder emails to customers go out from the mailbox set up in step 6. Reminders go out 1 week, 1 day and 2 hours before (each can be turned off in Settings › Appointments); a reminder is skipped when the booking was made inside its window.
 
-**Customer booking page (optional).** The app also serves a small customer-only site on `127.0.0.1:3080`: a "Book now" page (`/book`) and one page per booking (`/a/<signed link>`) where customers confirm, cancel or pick a new free time. Point a tunnel at that port only, for example Tailscale Funnel (`tailscale funnel --bg 3080`, free, keeps the same address), then in Settings › Appointments › Customer booking page enter the https address and tick the options. Nothing else in the app is reachable through it.
+**Customer booking page (optional).** The app also serves a small customer-only site on `127.0.0.1:3080`: a "Book now" page (`/book`) and one page per booking (`/a/<signed link>`) where customers confirm, cancel or pick a new free time. Customers see a month calendar with the number of free times each day, up to a year ahead. **Block time** on the Appointments screen closes a break, a day off or a holiday for online booking. Point a tunnel at that port only, for example Tailscale Funnel (`tailscale funnel --bg 3080`, free, keeps the same address), then in Settings › Appointments › Customer booking page enter the https address and tick the options. Nothing else in the app is reachable through it.
 
 ### 6. Email receipts (optional)
 

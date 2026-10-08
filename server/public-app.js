@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const { readToken, freeSlots, upcomingOpenDays, changeable } = require('./lib/customer-links');
+const { readToken, freeSlots, monthDays, firstFreeDay, bookableDay, lastBookableDay, changeable } = require('./lib/customer-links');
 const { getAppointment, emailCustomer, notifySalon } = require('./lib/appointments');
 const { audit } = require('./lib/audit');
 const { defaultLogo } = require('./lib/brand');
@@ -66,6 +66,44 @@ function createPublicApp(ctx) {
     return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'a.m.' : 'p.m.'}`;
   };
 
+  // A month calendar showing how many times are free each day, then the free
+  // times on the chosen day as buttons. link({ date } | { month }) builds the
+  // page's own URL; form is the <form ...> tag the time buttons submit with.
+  function slotPicker({ query, minutes, ignoreId, link, form, hidden = '', skipTime }) {
+    const tz = salon().tz;
+    const today = businessDate(new Date(), tz);
+    const firstMonth = today.slice(0, 7);
+    const lastMonth = lastBookableDay(ctx).slice(0, 7);
+    let date = isValidYmd(query.date) && bookableDay(ctx, query.date) ? query.date : null;
+    let month = /^\d{4}-\d{2}$/.test(query.month || '') ? query.month : null;
+    if (!month) month = (date || firstFreeDay(ctx, minutes, ignoreId) || today).slice(0, 7);
+    if (month < firstMonth) month = firstMonth;
+    if (month > lastMonth) month = lastMonth;
+    const days = monthDays(ctx, month, minutes, ignoreId);
+    if (date && date.slice(0, 7) !== month) date = null;
+    if (!date) date = (days.find((d) => d.state === 'open') || {}).date || null;
+    const shift = (n) => {
+      const [y, m] = month.split('-').map(Number);
+      const d = new Date(Date.UTC(y, m - 1 + n, 1));
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    };
+    const monthName = new Date(month + '-15T12:00:00Z').toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'long', year: 'numeric' });
+    const lead = new Date(month + '-01T12:00:00Z').getUTCDay();
+    const cell = (d) => {
+      const n = Number(d.date.slice(8));
+      if (d.state === 'open') return `<a class="d${d.date === date ? ' on' : ''}" href="${esc(link({ date: d.date }))}">${n}<small>${d.free} free</small></a>`;
+      return `<span class="d ${d.state}">${n}<small>${d.state === 'full' ? 'Full' : d.state === 'closed' ? 'Closed' : '&nbsp;'}</small></span>`;
+    };
+    const slots = date ? freeSlots(ctx, date, minutes, ignoreId).filter((t) => !(skipTime && skipTime(date, t))) : [];
+    const anyFree = days.some((d) => d.state === 'open');
+    return `<div class="mon">${month > firstMonth ? `<a href="${esc(link({ month: shift(-1) }))}" aria-label="Previous month">‹</a>` : '<span>‹</span>'}<b>${esc(monthName)}</b>${month < lastMonth ? `<a href="${esc(link({ month: shift(1) }))}" aria-label="Next month">›</a>` : '<span>›</span>'}</div>
+<div class="cal">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((w) => `<span class="wd">${w}</span>`).join('')}${'<span></span>'.repeat(lead)}${days.map(cell).join('')}</div>
+${date && slots.length ? `<h3>${esc(dayLabel(date))} · ${slots.length} time${slots.length === 1 ? '' : 's'} free</h3>
+${form}${hidden}<input type="hidden" name="date" value="${esc(date)}"><div class="times">${slots
+  .map((t) => `<button class="chip" type="submit" name="time" value="${t}">${esc(timeLabel(t))}</button>`).join('')}</div></form>`
+  : `<div class="note bad">${date && anyFree ? `No free times on ${esc(dayLabel(date))}. Please pick another day.` : 'There are no free times online this month. Try the next month, or call us.'}</div>`}`;
+  }
+
   function page(res, title, body, status = 200) {
     const s = salon();
     const logo = /^data:image\/(png|jpeg|jpg);base64,/.test(s.logo) ? `<img src="${esc(s.logo)}" alt="" class="logo">` : '';
@@ -84,6 +122,11 @@ main{max-width:520px;margin:0 auto;padding:24px 16px 40px}.card{background:#fff;
 .muted{color:var(--muted);font-size:14px}.days,.times{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 16px}
 .chip{padding:10px 14px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--ink);text-decoration:none;font-size:15px;font-family:inherit;cursor:pointer}
 .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.mon{display:flex;align-items:center;justify-content:space-between;margin:16px 0 8px}.mon b{font-size:17px}.mon a,.mon span{padding:6px 12px;border-radius:999px;text-decoration:none;color:var(--p);font-size:20px}.mon span{color:var(--line)}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:8px}.cal .wd{text-align:center;font-size:12px;color:var(--muted)}
+.cal .d{text-align:center;padding:6px 0;border-radius:10px;border:1px solid transparent;color:var(--muted);font-size:15px;text-decoration:none;min-width:0}
+.cal .d small{display:block;font-size:10px;line-height:1.2;white-space:nowrap;overflow:hidden}.cal a.d{border-color:var(--line);color:var(--ink);background:#fff}.cal a.d small{color:var(--ok)}
+.cal a.d.on{background:var(--ink);border-color:var(--ink);color:#fff}.cal a.d.on small{color:#fff}.cal .d.past{opacity:.4}
 .cat{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 0 6px}
 .svc{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;margin:8px 0;cursor:pointer}
 .svc input{width:20px;height:20px;accent-color:var(--p)}.grow{flex:1}
@@ -175,18 +218,12 @@ ${callUs()}`);
     if (!a) return;
     if (!changeable(ctx, a)) return res.redirect(303, '../' + req.params.token);
     const minutes = a.durationMinutes || Math.round((Date.parse(a.endAt) - Date.parse(a.startAt)) / 60000) || 30;
-    const days = upcomingOpenDays(ctx, 14).filter((d) => freeSlots(ctx, d, minutes, a.id).length);
     const tz = salon().tz;
     const current = businessDate(new Date(a.startAt), tz);
-    const day = isValidYmd(req.query.date) && days.includes(req.query.date) ? req.query.date : days.includes(current) ? current : days[0];
-    const slots = day ? freeSlots(ctx, day, minutes, a.id) : [];
     const currentTime = localTime(new Date(a.startAt), tz);
+    const query = req.query.date || req.query.month ? req.query : { date: current };
     page(res, 'Change time', `<h1>Pick a new time</h1><p class="muted">Now: ${esc(when(a.startAt, tz))} · ${minutes} min</p>
-${days.length ? `<div class="days">${days.map((d) => `<a class="chip${d === day ? ' on' : ''}" href="?date=${d}">${esc(dayLabel(d))}</a>`).join('')}</div>
-<form method="post"><input type="hidden" name="date" value="${esc(day)}"><div class="times">${slots
-  .filter((t) => !(day === current && t === currentTime))
-  .map((t) => `<button class="chip" type="submit" name="time" value="${t}">${esc(timeLabel(t))}</button>`).join('')}</div></form>`
-    : '<div class="note bad">There are no free times online in the next two weeks. Please call us.</div>'}
+${slotPicker({ query, minutes, ignoreId: a.id, link: (p) => '?' + new URLSearchParams(p), form: '<form method="post">', skipTime: (d, t) => d === current && t === currentTime })}
 <a class="btn" href="../${esc(req.params.token)}">Back</a>${callUs()}`);
   });
 
@@ -197,21 +234,22 @@ ${days.length ? `<div class="days">${days.map((d) => `<a class="chip${d === day 
     if (!changeable(ctx, a)) return back();
     const { date, time } = req.body || {};
     const minutes = a.durationMinutes || Math.round((Date.parse(a.endAt) - Date.parse(a.startAt)) / 60000) || 30;
-    if (!isValidYmd(date) || !isValidHm(time) || !upcomingOpenDays(ctx, 14).includes(date) || !freeSlots(ctx, date, minutes, a.id).includes(time)) {
+    if (!isValidYmd(date) || !isValidHm(time) || !freeSlots(ctx, date, minutes, a.id).includes(time)) {
       return page(res, 'Change time', `<h1>That time was just taken</h1><p>Please pick another time.</p><a class="btn primary" href="change?date=${esc(isValidYmd(date) ? date : '')}">See free times</a>`, 409);
     }
     const start = zonedToUtc(date, time, salon().tz);
     const end = new Date(start.getTime() + minutes * 60000);
     const from = a.startAt;
-    ctx.db().prepare("UPDATE appointments SET start_at = ?, end_at = ?, duration_minutes = ?, reminder_sent_at = NULL, updated_at = ? WHERE id = ? AND status IN ('booked','confirmed')")
-      .run(start.toISOString(), end.toISOString(), minutes, nowIso(), a.id);
+    const now = nowIso();
+    ctx.db().prepare("UPDATE appointments SET start_at = ?, end_at = ?, duration_minutes = ?, reminder_sent_at = NULL, reminders_sent = NULL, scheduled_at = ?, updated_at = ? WHERE id = ? AND status IN ('booked','confirmed')")
+      .run(start.toISOString(), end.toISOString(), minutes, now, now, a.id);
     audit(ctx.db(), customerReq(req), 'appointment.rescheduled', 'appointment', a.id, { by: 'customer', from, to: start.toISOString() });
     const fresh = await afterCustomerChange(a, 'rescheduled', { from });
     await emailCustomer(ctx, fresh, 'updated').catch(() => {});
     back();
   });
 
-  bookingRoutes(app, ctx, { page, esc, salonTz: () => salon().tz, dayLabel, timeLabel, RateLimiter });
+  bookingRoutes(app, ctx, { page, esc, salonTz: () => salon().tz, timeLabel, slotPicker, RateLimiter });
 
   app.get('/healthz', (req, res) => res.type('text/plain').send('ok'));
   app.use((req, res) => page(res, 'Not found', '<h1>Page not found</h1><p>Please use the link from your appointment email.</p>', 404));

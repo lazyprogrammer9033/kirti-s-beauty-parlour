@@ -3,6 +3,7 @@
 const { nowIso, businessDate, localTime } = require('./time');
 const { buildAppointmentEmail } = require('./appointment-email');
 const { customerLink } = require('./customer-links');
+const { defaultLogo } = require('./brand');
 
 const SELECT = `SELECT a.id, a.customer_id AS customerId, c.full_name AS customerName, c.phone AS customerPhone, c.email AS customerEmail,
     c.customer_code AS customerCode, a.staff_user_id AS staffUserId, u.display_name AS staffName, a.start_at AS startAt, a.end_at AS endAt,
@@ -40,7 +41,7 @@ function salonInfo(ctx) {
     email: s.get('business_email') || s.get('smtp_from') || s.get('smtp_user') || '',
     phone: s.get('business_phone') || '',
     address: s.get('business_address') || '',
-    logo: s.get('business_logo') || '',
+    logo: s.get('business_logo') || defaultLogo(),
     timezone: s.timezone(),
   };
 }

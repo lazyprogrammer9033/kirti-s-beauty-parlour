@@ -4,6 +4,7 @@ const express = require('express');
 const { readToken, freeSlots, upcomingOpenDays, changeable } = require('./lib/customer-links');
 const { getAppointment, emailCustomer, notifySalon } = require('./lib/appointments');
 const { audit } = require('./lib/audit');
+const { defaultLogo } = require('./lib/brand');
 const { nowIso, zonedToUtc, isValidYmd, isValidHm, businessDate, localTime } = require('./lib/time');
 
 // The only part of the salon app that is reachable from the internet (through
@@ -52,7 +53,7 @@ function createPublicApp(ctx) {
 
   const salon = () => {
     const s = ctx.settings;
-    return { name: s.get('business_name') || 'Beauty Parlour', phone: s.get('business_phone') || '', address: s.get('business_address') || '', logo: s.get('business_logo') || '', tz: s.timezone() };
+    return { name: s.get('business_name') || 'Beauty Parlour', phone: s.get('business_phone') || '', address: s.get('business_address') || '', logo: s.get('business_logo') || defaultLogo(), tz: s.timezone() };
   };
   const when = (iso, tz) => {
     const d = new Date(iso);

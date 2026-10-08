@@ -91,7 +91,7 @@ async function route() {
 function shell() {
   const user = session.user;
   navEl = h('nav.sidebar', { 'aria-label': 'Main' },
-    h('div.brand', h('div.brand-mark', icon('sparkles', 20)), h('div.brand-text', h('span.brand-name', session.settings.business_name || 'Beauty Parlour'), h('span.brand-sub', 'Salon Manager'))),
+    h('div.brand', h('img.brand-mark', { src: '/img/icon.svg', alt: '' }), h('div.brand-text', h('span.brand-name', session.settings.business_name || 'Beauty Parlour'), h('span.brand-sub', 'Salon Manager'))),
     h('div.nav-links',
       NAV.filter((n) => !n.perm || session.can(n.perm)).map((n) =>
         h('a.nav-link' + (n.primary ? '.nav-primary' : ''), { href: '#/' + n.path, dataset: { path: n.path } }, icon(n.icon), h('span', n.label)))),
@@ -261,7 +261,7 @@ function authScreen({ setup, businessName }) {
   err, btn);
   clear(document.getElementById('app'),
     h('div.auth',
-      h('div.auth-art', h('div.auth-art-inner', h('div.brand-mark.lg', icon('sparkles', 34)), h('h1.display', businessName || 'Beauty Parlour'), h('p', 'Salon Manager'))),
+      h('div.auth-art', h('div.auth-art-inner', h('img.brand-mark.lg', { src: '/img/icon.svg', alt: '' }), h('h1.display', businessName || 'Beauty Parlour'), h('p', 'Salon Manager'))),
       h('div.auth-panel',
         h('div.auth-card',
           h('h2.display', setup ? 'Welcome! Let’s set up your salon' : 'Welcome back'),

@@ -93,7 +93,7 @@ export async function render(view, { params, query }) {
   const paid = inv.payments.filter((p) => p.status === 'completed');
   const receipt = h('article.receipt' + (inv.status === 'void' ? '.is-void' : ''),
     h('header.receipt-head',
-      biz.business_logo ? h('img.receipt-logo', { src: biz.business_logo, alt: '' }) : null,
+      h('img.receipt-logo', { src: biz.business_logo || '/img/logo-mark.png', alt: '' }),
       h('div.receipt-biz',
         h('h2.display', biz.business_name),
         [biz.business_address, biz.business_phone, biz.business_email, biz.business_website].filter(Boolean).map((l) => h('div', l)),

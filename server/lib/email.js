@@ -27,7 +27,7 @@ class Mailer {
     });
   }
 
-  async send({ to, subject, text, attachments }) {
+  async send({ to, subject, text, html, replyTo, attachments }) {
     if (!this.configured()) {
       const e = new Error('Email is not set up yet. The owner can set it up in Settings > Email.');
       e.status = 400;
@@ -37,7 +37,7 @@ class Mailer {
     const s = this.ctx.settings;
     const name = s.get('business_name') || 'Beauty Parlour';
     const fromAddr = s.get('smtp_from') || s.get('smtp_user');
-    return this.transport().sendMail({ from: `"${name.replace(/"/g, '')}" <${fromAddr}>`, to, subject, text, attachments });
+    return this.transport().sendMail({ from: `"${name.replace(/"/g, '')}" <${fromAddr}>`, to, replyTo, subject, text, html, attachments });
   }
 }
 

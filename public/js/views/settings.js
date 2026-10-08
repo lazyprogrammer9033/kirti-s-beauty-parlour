@@ -450,7 +450,20 @@ async function appointments(body, { query, rerender }) {
       h('label.check.pad-top', f('appt_reminder_email', { type: 'checkbox' }), ' Email customers a reminder before their appointment'),
       field('Send the reminder', f('appt_reminder_hours', { type: 'select', options: [[2, '2 hours before'], [4, '4 hours before'], [12, '12 hours before'], [24, '1 day before'], [48, '2 days before']] }))),
     field('Default appointment length (minutes)', f('appt_default_minutes', { inputmode: 'numeric' }), 'Used when the chosen services have no length set.'),
-  ], { title: 'Customer emails', intro: 'Only customers with an email address on file get these. You can untick the box on any booking.' });
+  ], { title: 'Customer emails', intro: 'Only customers with an email address on file get these. You can untick the box on any booking. Customers can tap Confirm, Change time or Cancel, which sends a reply to your salon email (Settings › Business), and add the booking to their own calendar.' });
+  if (emailReady) {
+    const to = h('input.input', { type: 'email', value: s.business_email || '', placeholder: 'you@gmail.com' });
+    body.append(h('div.card.row', field('See what customers get: send a sample to', to), h('button.btn.soft', { type: 'button', onclick: async (e) => {
+      e.currentTarget.disabled = true;
+      try {
+        await api.post('/appointments/sample-email', { to: to.value });
+        toast('Sample sent to ' + to.value);
+      } catch (ex) {
+        toast(ex.message, 'error');
+      }
+      e.currentTarget.disabled = false;
+    } }, icon('mail', 18), 'Send sample')));
+  }
 }
 
 async function email(body) {

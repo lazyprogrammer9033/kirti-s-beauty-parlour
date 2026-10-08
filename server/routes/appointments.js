@@ -4,7 +4,7 @@ const { requirePerm, HttpError, intParam, str } = require('../lib/http');
 const { audit } = require('../lib/audit');
 const { nowIso, zonedToUtc, addDays, isValidYmd, isValidHm } = require('../lib/time');
 const { redirectUri } = require('./drive');
-const { getAppointment, listAppointments, emailCustomer, localParts } = require('../lib/appointments');
+const { getAppointment, listAppointments, emailCustomer, appointmentEmail, localParts } = require('../lib/appointments');
 
 const STATUSES = ['booked', 'confirmed', 'completed', 'cancelled', 'no_show'];
 const OPEN = ['booked', 'confirmed'];
@@ -157,6 +157,23 @@ module.exports = function appointmentRoutes(api, ctx) {
 
   // ---------- Google Calendar settings (owner) ----------
   const owner = requirePerm('settings.manage');
+
+  // Sends the owner an example confirmation so she can see what customers get.
+  api.post('/appointments/sample-email', owner, async (req, res) => {
+    const to = str(req.body.to, { required: true, max: 160, label: 'Email' });
+    if (!ctx.mailer.configured()) throw new HttpError(400, 'Email is not set up yet. Set it up in Settings › Email first.');
+    const start = new Date(Date.now() + 2 * 86400000);
+    start.setUTCMinutes(0, 0, 0);
+    const services = ctx.db().prepare('SELECT id, name FROM services WHERE active = 1 ORDER BY sort_order, id LIMIT 2').all();
+    const sample = { id: 0, customerName: 'Sample Customer', customerEmail: to, startAt: start.toISOString(), endAt: new Date(start.getTime() + 30 * 60000).toISOString(),
+      services: services.length ? services : [{ id: 0, name: 'Eyebrow threading' }], createdAt: nowIso(), updatedAt: nowIso() };
+    try {
+      await ctx.mailer.send(appointmentEmail(ctx, sample, 'confirmation'));
+    } catch (e) {
+      throw new HttpError(502, 'Could not send: ' + e.message);
+    }
+    res.json({ ok: true });
+  });
 
   api.get('/calendar/status', owner, (req, res) => res.json(ctx.calendar.status()));
 

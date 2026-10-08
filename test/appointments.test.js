@@ -26,6 +26,7 @@ test('book, list, reschedule and cancel appointments, copied to the chosen Googl
   const g = fakeCalendar();
   t = await startApp({ google: g.options });
   const owner = await setupOwner(t);
+  await owner.put('/api/settings', { business_email: 'sharma.kirti56@gmail.com', business_phone: '416-555-0100', business_address: '12 Rose St, Toronto' });
   const sent = [];
   t.ctx.mailer.transportOverride = { sendMail: async (m) => sent.push(m) };
 
@@ -45,6 +46,16 @@ test('book, list, reschedule and cancel appointments, copied to the chosen Googl
   assert.equal(first.data.emailed, true);
   assert.match(sent[0].subject, /Your appointment at Kirti's Beauty Parlour/);
   assert.match(sent[0].text, /Eyebrows, Upper Lip/);
+  // Branded HTML with reply-based Confirm / Change / Cancel and a calendar file.
+  assert.match(sent[0].html, /You’re booked in/);
+  assert.match(sent[0].html, /mailto:[^"]*subject=Confirm%20appointment%20%23/);
+  assert.match(sent[0].html, /subject=Change%20appointment/);
+  assert.match(sent[0].html, /subject=Cancel%20appointment/);
+  assert.match(sent[0].html, /calendar\.google\.com\/calendar\/render/);
+  assert.equal(sent[0].replyTo, 'sharma.kirti56@gmail.com');
+  assert.match(sent[0].html, /href="tel:4165550100"/);
+  assert.equal(sent[0].attachments[0].filename, 'appointment.ics');
+  assert.match(sent[0].attachments[0].content, /BEGIN:VEVENT[\s\S]*DTSTART:\d{8}T\d{6}Z/);
 
   // A clash needs confirming.
   const clash = await owner.post('/api/appointments', { customerId: cust.id, date: day, time: '10:10', serviceIds: [eyebrows.id] });
@@ -77,7 +88,7 @@ test('book, list, reschedule and cancel appointments, copied to the chosen Googl
   assert.equal(moved.data.time, '16:00');
   const ev = g.inCalendar('primary').find((e) => e.extendedProperties.private.salonAppointmentId === String(second.id));
   assert.equal(new Date(ev.start.dateTime).toISOString(), moved.data.startAt);
-  assert.match(sent.at(-1).subject, /has changed/);
+  assert.match(sent.at(-1).subject, /has moved/);
 
   // Switching to another calendar moves upcoming events across.
   const cals = (await owner.get('/api/calendar/calendars')).data;

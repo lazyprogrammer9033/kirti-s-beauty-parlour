@@ -1,6 +1,7 @@
 'use strict';
 
 const { nowIso, businessDate, localTime } = require('./time');
+const { buildAppointmentEmail } = require('./appointment-email');
 
 const SELECT = `SELECT a.id, a.customer_id AS customerId, c.full_name AS customerName, c.phone AS customerPhone, c.email AS customerEmail,
     c.customer_code AS customerCode, a.staff_user_id AS staffUserId, u.display_name AS staffName, a.start_at AS startAt, a.end_at AS endAt,
@@ -30,44 +31,21 @@ function listAppointments(db, where, args) {
   return attachServices(db, db.prepare(`${SELECT} WHERE ${where} ORDER BY a.start_at, a.id`).all(...args));
 }
 
-function whenText(iso, tz) {
-  const d = new Date(iso);
-  const date = d.toLocaleDateString('en-CA', { timeZone: tz, weekday: 'long', month: 'long', day: 'numeric' });
-  const time = d.toLocaleTimeString('en-CA', { timeZone: tz, hour: 'numeric', minute: '2-digit' });
-  return `${date} at ${time}`;
+// The salon's details as shown in customer emails.
+function salonInfo(ctx) {
+  const s = ctx.settings;
+  return {
+    name: s.get('business_name') || 'Beauty Parlour',
+    email: s.get('business_email') || s.get('smtp_from') || s.get('smtp_user') || '',
+    phone: s.get('business_phone') || '',
+    address: s.get('business_address') || '',
+    logo: s.get('business_logo') || '',
+    timezone: s.timezone(),
+  };
 }
 
-// Plain-text emails to the customer, sent from the salon's own mailbox.
 function appointmentEmail(ctx, a, kind) {
-  const s = ctx.settings;
-  const name = s.get('business_name') || 'Beauty Parlour';
-  const when = whenText(a.startAt, s.timezone());
-  const services = a.services.map((x) => x.name).join(', ');
-  const contact = [s.get('business_address'), s.get('business_phone')].filter(Boolean).join('\n');
-  const first = a.customerName.split(/\s+/)[0];
-  const subjects = {
-    confirmation: `Your appointment at ${name}: ${when}`,
-    updated: `Your appointment at ${name} has changed: ${when}`,
-    reminder: `Reminder: your appointment at ${name}, ${when}`,
-    cancelled: `Your appointment at ${name} is cancelled`,
-  };
-  const openers = {
-    confirmation: `Your appointment is booked for ${when}.`,
-    updated: `Your appointment has been moved to ${when}.`,
-    reminder: `This is a friendly reminder of your appointment on ${when}.`,
-    cancelled: `Your appointment on ${when} has been cancelled. Please get in touch if you would like to book another time.`,
-  };
-  const body = [
-    `Hi ${first},`,
-    '',
-    openers[kind],
-    kind !== 'cancelled' && services ? `Services: ${services}` : null,
-    kind !== 'cancelled' ? '\nIf you need to change or cancel, please let us know.' : null,
-    '',
-    name,
-    contact || null,
-  ].filter((l) => l !== null);
-  return { to: a.customerEmail, subject: subjects[kind], text: body.join('\n') };
+  return buildAppointmentEmail(a, kind, salonInfo(ctx));
 }
 
 async function emailCustomer(ctx, a, kind) {

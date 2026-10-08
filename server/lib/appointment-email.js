@@ -97,7 +97,13 @@ function buildAppointmentEmail(a, kind, salon) {
   const replyBody = (verb) => `Hi ${salon.name},\n\n${verb}\n\nAppointment ${ref}: ${w.date} at ${w.time}${services ? ' (' + services + ')' : ''}\n\nThank you,\n${a.customerName}`;
 
   const actions = [];
-  if (salon.email && active) {
+  const L = salon.links;
+  if (L && active) {
+    // Real buttons: each opens this booking's page on the salon's website.
+    actions.push({ href: L.confirm, label: 'Confirm', primary: true });
+    actions.push({ href: L.change, label: 'Change time' });
+    actions.push({ href: L.cancel, label: 'Cancel' });
+  } else if (salon.email && active) {
     actions.push({ href: mailto(salon.email, `Confirm appointment ${ref}: ${w.date}, ${w.time}`, replyBody('I confirm my appointment.')), label: 'Confirm', primary: true });
     actions.push({ href: mailto(salon.email, `Change appointment ${ref}: ${w.date}, ${w.time}`, replyBody('I would like to change my appointment. A better time for me would be:\n\n')), label: 'Change time' });
     actions.push({ href: mailto(salon.email, `Cancel appointment ${ref}: ${w.date}, ${w.time}`, replyBody('I need to cancel my appointment.')), label: 'Cancel' });
@@ -137,7 +143,7 @@ Add it to your calendar: <a href="${esc(googleCalendarLink(a, salon))}" style="c
 </td></tr>` : ''}
 <tr><td style="padding:22px 28px 26px;font-size:13px;color:${COLORS.muted};line-height:1.5;border-top:1px solid ${COLORS.line};margin-top:16px;">
 ${esc(salon.name)}${salon.address ? '<br>' + esc(salon.address).replace(/\n/g, '<br>') : ''}${salon.phone ? '<br>' + esc(salon.phone) : ''}<br>
-Appointment ${esc(ref)}. You can also just reply to this email.
+Appointment ${esc(ref)}. ${L && active ? `<a href="${esc(L.view)}" style="color:${COLORS.primary};">Manage your appointment</a> or reply to this email.` : 'You can also just reply to this email.'}
 </td></tr>
 </table></td></tr></table></body></html>`;
 
@@ -151,7 +157,7 @@ Appointment ${esc(ref)}. You can also just reply to this email.
     services ? `Services: ${services}` : null,
     salon.address ? `Where: ${salon.address}` : null,
     '',
-    active ? 'To confirm, change or cancel, just reply to this email' + (salon.phone ? ` or call ${salon.phone}.` : '.') : salon.phone ? `To book another time, reply or call ${salon.phone}.` : 'To book another time, just reply to this email.',
+    active && L ? `Confirm, change or cancel here: ${L.view}` : active ? 'To confirm, change or cancel, just reply to this email' + (salon.phone ? ` or call ${salon.phone}.` : '.') : salon.phone ? `To book another time, reply or call ${salon.phone}.` : 'To book another time, just reply to this email.',
     '',
     salon.name,
     `Appointment ${ref}`,

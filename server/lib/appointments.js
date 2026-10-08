@@ -2,6 +2,7 @@
 
 const { nowIso, businessDate, localTime } = require('./time');
 const { buildAppointmentEmail } = require('./appointment-email');
+const { customerLink } = require('./customer-links');
 
 const SELECT = `SELECT a.id, a.customer_id AS customerId, c.full_name AS customerName, c.phone AS customerPhone, c.email AS customerEmail,
     c.customer_code AS customerCode, a.staff_user_id AS staffUserId, u.display_name AS staffName, a.start_at AS startAt, a.end_at AS endAt,
@@ -45,7 +46,28 @@ function salonInfo(ctx) {
 }
 
 function appointmentEmail(ctx, a, kind) {
-  return buildAppointmentEmail(a, kind, salonInfo(ctx));
+  const view = customerLink(ctx, a);
+  const links = view ? { view, confirm: customerLink(ctx, a, 'confirm'), change: customerLink(ctx, a, 'change'), cancel: customerLink(ctx, a, 'cancel') } : null;
+  return buildAppointmentEmail(a, kind, { ...salonInfo(ctx), links });
+}
+
+// Tells the salon when a customer confirms, cancels or moves a booking online.
+async function notifySalon(ctx, a, action, extra = {}) {
+  const to = ctx.settings.get('business_email');
+  if (!to || !ctx.mailer.configured()) return false;
+  const tz = ctx.settings.timezone();
+  const fmt = (iso) => new Date(iso).toLocaleString('en-CA', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const verbs = { confirmed: 'Confirmed', cancelled: 'Cancelled', rescheduled: 'Moved' };
+  const lines = [
+    `${a.customerName} (${a.customerPhone}) ${action} their appointment online.`,
+    '',
+    action === 'rescheduled' ? `Was: ${fmt(extra.from)}\nNow: ${fmt(a.startAt)}` : `When: ${fmt(a.startAt)}`,
+    a.services.length ? `Services: ${a.services.map((x) => x.name).join(', ')}` : null,
+    '',
+    'The salon app and Google Calendar are already updated.',
+  ].filter((l) => l !== null);
+  await ctx.mailer.send({ to, subject: `${verbs[action]} by customer: ${a.customerName}, ${fmt(a.startAt)}`, text: lines.join('\n') });
+  return true;
 }
 
 async function emailCustomer(ctx, a, kind) {
@@ -107,4 +129,4 @@ function localParts(iso, tz) {
   return { date: businessDate(d, tz), time: localTime(d, tz) };
 }
 
-module.exports = { getAppointment, listAppointments, emailCustomer, appointmentEmail, AppointmentScheduler, localParts };
+module.exports = { getAppointment, listAppointments, emailCustomer, appointmentEmail, notifySalon, AppointmentScheduler, localParts };

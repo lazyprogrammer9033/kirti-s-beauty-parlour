@@ -450,7 +450,22 @@ async function appointments(body, { query, rerender }) {
       h('label.check.pad-top', f('appt_reminder_email', { type: 'checkbox' }), ' Email customers a reminder before their appointment'),
       field('Send the reminder', f('appt_reminder_hours', { type: 'select', options: [[2, '2 hours before'], [4, '4 hours before'], [12, '12 hours before'], [24, '1 day before'], [48, '2 days before']] }))),
     field('Default appointment length (minutes)', f('appt_default_minutes', { inputmode: 'numeric' }), 'Used when the chosen services have no length set.'),
-  ], { title: 'Customer emails', intro: 'Only customers with an email address on file get these. You can untick the box on any booking. Customers can tap Confirm, Change time or Cancel, which sends a reply to your salon email (Settings › Business), and add the booking to their own calendar.' });
+  ], { title: 'Customer emails', intro: 'Only customers with an email address on file get these. You can untick the box on any booking. Customers can tap Confirm, Change time or Cancel (this opens the booking page below when it is on, otherwise a reply to your salon email in Settings › Business) and add the booking to their own calendar.' });
+  // Online confirm / cancel / change for customers.
+  const openDays = new Set(String(s.appt_open_days ?? '').split(','));
+  const dayBoxes = [['1','Mon'],['2','Tue'],['3','Wed'],['4','Thu'],['5','Fri'],['6','Sat'],['0','Sun']].map(([v, l]) => [v, h('input', { type: 'checkbox', checked: openDays.has(v) }), l]);
+  const linkInputs = settingsForm(body, s, (f) => [
+    h('label.check', f('appt_customer_links', { type: 'checkbox' }), ' Customers can confirm, cancel or change their booking online'),
+    field('Customer page address', f('public_base_url', { placeholder: 'https://book.yoursalon.com' }), 'The secure web address of the tunnel to this computer. Only the booking pages are reachable there; the rest of the app stays on your Wi-Fi.'),
+    h('div.grid-3',
+      field('Opens', f('appt_open_time', { inputType: 'time' })),
+      field('Closes', f('appt_close_time', { inputType: 'time' })),
+      field('Changes allowed until', f('appt_change_cutoff_hours', { type: 'select', options: [[0, 'Start time'], [2, '2 hours before'], [4, '4 hours before'], [12, '12 hours before'], [24, '1 day before'], [48, '2 days before']] }))),
+    h('div.field', h('span.label', 'Open days (for times customers can pick)'), h('div.row', dayBoxes.map(([, box, l]) => h('label.check', box, ' ' + l)))),
+  ], { title: 'Customer booking page', intro: 'With this on, the buttons in your emails open a page where the customer taps Confirm, Cancel or picks a free time. You get an email whenever they do, and the calendar updates itself.' });
+  // Open days are saved with the rest of that form.
+  linkInputs.appt_open_days = { type: 'text', get value() { return dayBoxes.filter(([, b]) => b.checked).map(([v]) => v).join(','); } };
+
   if (emailReady) {
     const to = h('input.input', { type: 'email', value: s.business_email || '', placeholder: 'you@gmail.com' });
     body.append(h('div.card.row', field('See what customers get: send a sample to', to), h('button.btn.soft', { type: 'button', onclick: async (e) => {

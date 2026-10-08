@@ -85,6 +85,13 @@ const DEFAULT_SETTINGS = {
   appt_confirm_email: '1',
   appt_reminder_email: '1',
   appt_reminder_hours: '24',
+  // Customer links stay off until the owner sets up the public address.
+  public_base_url: '',
+  appt_customer_links: '0',
+  appt_open_time: '10:00',
+  appt_close_time: '19:00',
+  appt_open_days: '0,1,2,3,4,5,6',
+  appt_change_cutoff_hours: '2',
 };
 
 // Sample catalogue used by tests and demos. A real salon starts empty and adds

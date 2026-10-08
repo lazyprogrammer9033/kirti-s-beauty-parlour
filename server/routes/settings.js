@@ -73,6 +73,30 @@ const EDITABLE = {
     if (!Number.isInteger(n) || n < 5 || n > 480) throw new HttpError(400, 'Default length must be 5–480 minutes');
     return String(n);
   },
+  public_base_url: (v) => {
+    const s = str(v, { max: 200 }) || '';
+    if (s && !/^https:\/\/[a-z0-9.-]+(:\d+)?\/?$/i.test(s)) throw new HttpError(400, 'The customer page address must start with https://');
+    return s.replace(/\/$/, '');
+  },
+  appt_customer_links: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
+  appt_open_time: (v) => {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v))) throw new HttpError(400, 'Opening time must look like 10:00');
+    return String(v);
+  },
+  appt_close_time: (v) => {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v))) throw new HttpError(400, 'Closing time must look like 19:00');
+    return String(v);
+  },
+  appt_open_days: (v) => {
+    const days = [...new Set(String(Array.isArray(v) ? v.join(',') : v).split(',').filter((x) => x !== '').map(Number))];
+    if (days.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) throw new HttpError(400, 'Invalid opening days');
+    return days.sort().join(',');
+  },
+  appt_change_cutoff_hours: (v) => {
+    const n = Number(v);
+    if (![0, 2, 4, 12, 24, 48].includes(n)) throw new HttpError(400, 'Choose how close to the appointment customers can change it');
+    return String(n);
+  },
   appt_confirm_email: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
   appt_reminder_email: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
   appt_reminder_hours: (v) => {

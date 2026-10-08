@@ -210,6 +210,11 @@ class DriveService {
     return (await res.json()).files || [];
   }
 
+  async deleteFile(fileId) {
+    if (!/^[\w-]+$/.test(fileId)) throw driveError('Invalid file');
+    await this.api('DELETE', `${this.apiUrl}/files/${fileId}`);
+  }
+
   async download(fileId) {
     if (!/^[\w-]+$/.test(fileId)) throw driveError('Invalid file');
     const res = await this.api('GET', `${this.apiUrl}/files/${fileId}?alt=media`);

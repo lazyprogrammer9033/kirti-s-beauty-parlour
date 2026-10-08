@@ -149,7 +149,7 @@ async function backup(body, { query, rerender }) {
       h('h3', health === 'good' ? 'Your data is backed up' : health === 'warn' ? 'Last backup is more than 2 days old' : 'No backup yet'),
       h('p', lastOk ? `Last successful backup: ${fmtDateTime(lastOk.at)}${lastOk.driveStatus === 'uploaded' ? ' · also on Google Drive' : ''}` : 'Make your first backup now.'),
       st.lastFailure ? h('p.small.err', `Problem on ${fmtDateTime(st.lastFailure.at)}: ${st.lastFailure.error}`) : null,
-      h('p.small.muted', `Automatic backup: ${st.autoEnabled ? `daily after ${st.backupHour}:00` : 'off'} · Google Drive: ${drive.connected ? 'connected' : 'not connected'}`)),
+      h('p.small.muted', `Automatic backup: ${st.autoEnabled ? (st.frequency === 'daily' ? `daily after ${st.backupHour}:00` : 'every hour') : 'off'} · Google Drive: ${drive.connected ? 'connected' : 'not connected'}`)),
     backupNow));
 
   // Google Drive
@@ -182,7 +182,7 @@ async function backup(body, { query, rerender }) {
               toast(e.message, 'error');
             }
           } }, icon('cloud', 18), 'Connect Google Drive'))
-        : null,
+        : '',
       h('details.more', { open: !drive.configured },
         h('summary', drive.configured ? 'Change Google app credentials' : 'One-time setup: Google app credentials'),
         h('ol.steps',
@@ -210,10 +210,11 @@ async function backup(body, { query, rerender }) {
   // Schedule
   const s = await api.get('/settings');
   settingsForm(body, s, (f) => [
-    h('label.check', f('backup_auto_enabled', { type: 'checkbox' }), ' Back up automatically every day'),
+    h('label.check', f('backup_auto_enabled', { type: 'checkbox' }), ' Back up automatically'),
     h('div.grid-2',
-      field('Back up after', f('backup_hour', { type: 'select', options: Array.from({ length: 24 }, (_, i) => [i, `${String(i).padStart(2, '0')}:00`]) }), 'Runs once a day while the app is running.'),
-      field('Automatic backups to keep on this computer', f('backup_keep_local', { inputmode: 'numeric' }))),
+      field('How often', f('backup_frequency', { type: 'select', options: [['hourly', 'Every hour'], ['daily', 'Once a day']] }), 'Hourly backups are skipped when nothing has changed.'),
+      field('Daily backup after', f('backup_hour', { type: 'select', options: Array.from({ length: 24 }, (_, i) => [i, `${String(i).padStart(2, '0')}:00`]) }), 'Only used for once-a-day backups.')),
+    field('Days of backups to keep', f('backup_keep_local', { inputmode: 'numeric' }), 'Every backup from the last 2 days is kept, then one per day. Older automatic backups are removed here and from Google Drive.'),
   ], { title: 'Automatic backups' });
 
   // Export

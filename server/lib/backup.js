@@ -6,6 +6,8 @@ const { validateBackupFile } = require('../db');
 const { nowIso, businessDate, localHour } = require('./time');
 const { audit } = require('./audit');
 
+const HOUR = 60 * 60 * 1000;
+
 // Backups are consistent SQLite snapshots made with SQLite's online backup API,
 // so they are safe to take while the salon is using the app.
 class BackupService {
@@ -58,7 +60,7 @@ class BackupService {
         VALUES (?, ?, ?, 'success', ?, ?, ?, ?, ?, ?)`).run(filename, kind, size, driveStatus, driveFileId, error, req?.user?.id || null, now, now).lastInsertRowid;
       audit(db, req || null, 'backup.created', 'backup', id, { filename, kind, driveStatus });
       record = this.get(id);
-      this.prune();
+      await this.prune().catch((e) => console.error('Backup cleanup failed:', e.message));
     } catch (e) {
       db.prepare(`INSERT INTO backups (filename, kind, status, error, created_by, created_at, updated_at) VALUES (?, ?, 'failed', ?, ?, ?, ?)`)
         .run(filename, kind, e.message, req?.user?.id || null, now, now);
@@ -90,24 +92,53 @@ class BackupService {
       lastSuccess: last || null,
       lastFailure: lastFailure && (!last || lastFailure.at >= last.at) ? lastFailure : null,
       autoEnabled: s.get('backup_auto_enabled') === '1',
+      frequency: s.get('backup_frequency') === 'daily' ? 'daily' : 'hourly',
       backupHour: Number(s.get('backup_hour') || 22),
       keepLocal: Number(s.get('backup_keep_local') || 30),
       folder: this.dir,
     };
   }
 
-  // Keeps the newest N automatic backups on disk. Manual and pre-restore backups
-  // are only removed by the owner.
-  prune() {
-    const keep = Math.max(Number(this.ctx.settings.get('backup_keep_local') || 30), 3);
-    const autos = this.ctx.db().prepare("SELECT filename FROM backups WHERE kind = 'auto' AND status = 'success' ORDER BY id DESC").all();
-    for (const r of autos.slice(keep)) {
+  // Automatic backups: every one from the last 48 hours, then the newest of each
+  // day for backup_keep_local days. Older ones are removed from this computer
+  // and from Google Drive. Manual and pre-restore backups are only removed by the owner.
+  async prune() {
+    const db = this.ctx.db();
+    const tz = this.ctx.settings.timezone();
+    const days = Math.max(Number(this.ctx.settings.get('backup_keep_local') || 30), 3);
+    const now = Date.now();
+    const autos = db.prepare("SELECT id, filename, drive_file_id AS driveFileId, created_at AS createdAt FROM backups WHERE kind = 'auto' AND status = 'success' ORDER BY id DESC").all();
+    const seenDays = new Set();
+    const remove = [];
+    for (const r of autos) {
+      const age = now - new Date(r.createdAt).getTime();
+      const day = businessDate(new Date(r.createdAt), tz);
+      const keep = age < 48 * HOUR || (!seenDays.has(day) && age < days * 24 * HOUR);
+      seenDays.add(day);
+      if (!keep) remove.push(r);
+    }
+    for (const r of remove) {
       try {
         fs.rmSync(path.join(this.dir, r.filename), { force: true });
       } catch {
         /* ignore */
       }
     }
+    if (!this.ctx.drive.isConnected()) return;
+    for (const r of remove.filter((x) => x.driveFileId)) {
+      try {
+        await this.ctx.drive.deleteFile(r.driveFileId);
+        db.prepare('UPDATE backups SET drive_file_id = NULL, updated_at = ? WHERE id = ?').run(nowIso(), r.id);
+      } catch (e) {
+        console.error('Could not remove an old backup from Google Drive:', e.message);
+      }
+    }
+  }
+
+  // Hourly backups are skipped when nothing has been saved since the last one,
+  // so a closed salon does not fill Google Drive with identical copies.
+  dataChanges() {
+    return this.ctx.db().prepare('SELECT total_changes() AS n').get().n;
   }
 
   async maybeRunScheduled() {
@@ -115,11 +146,17 @@ class BackupService {
     if (s.get('backup_auto_enabled') !== '1') return null;
     const tz = s.timezone();
     const now = new Date();
-    if (localHour(now, tz) < Number(s.get('backup_hour') || 22)) return null;
-    const today = businessDate(now, tz);
     const done = this.ctx.db().prepare("SELECT created_at FROM backups WHERE kind = 'auto' AND status = 'success' ORDER BY id DESC LIMIT 1").get();
-    if (done && businessDate(new Date(done.created_at), tz) === today) return null;
-    return this.create('auto', null);
+    if (s.get('backup_frequency') === 'daily') {
+      if (localHour(now, tz) < Number(s.get('backup_hour') || 22)) return null;
+      if (done && businessDate(new Date(done.created_at), tz) === businessDate(now, tz)) return null;
+    } else {
+      if (done && now - new Date(done.created_at) < HOUR - 5 * 60 * 1000) return null;
+      if (done && this.changesAtLastAuto === this.dataChanges()) return null;
+    }
+    const record = await this.create('auto', null);
+    this.changesAtLastAuto = this.dataChanges();
+    return record;
   }
 
   startScheduler() {

@@ -14,7 +14,7 @@ A simple, elegant salon management app for iPad and Mac: customer lookup by phon
 - **Reports** for sales (daily/weekly/monthly/yearly/custom), customers, services, payments, staff and customer spending, exportable to CSV and PDF.
 - **Services** you manage yourself (categories, prices, duration, taxable, on/off). Price changes never alter past receipts.
 - **Canadian tax** set in Settings (HST/GST rate, prices with or without tax). Each receipt keeps the tax it was charged. Amounts in CAD.
-- **Backups**: automatic daily backup, Backup Now, restore, and copies in your own Google Drive. **Export All Data** to Excel or CSV.
+- **Backups**: automatic hourly backup (or once a day), Backup Now, restore, and copies in your own Google Drive. **Export All Data** to Excel or CSV.
 - **Owner and staff logins** with permissions, and an audit log that cannot be edited.
 
 The design decisions (database schema, architecture, Google Drive approach, security review and open questions) are in [docs/PLAN.md](docs/PLAN.md).
@@ -23,7 +23,7 @@ The design decisions (database schema, architecture, Google Drive approach, secu
 
 ## Run it at the salon: Mac + iPad on the same Wi-Fi
 
-The app runs on one Mac at the salon. The iPad (and any other device on the salon Wi-Fi) opens it in Safari. All data stays on that Mac, with daily copies in your Google Drive. Nothing to install on the iPad.
+The app runs on one Mac at the salon. The iPad (and any other device on the salon Wi-Fi) opens it in Safari. All data stays on that Mac, with hourly copies in your Google Drive. Nothing to install on the iPad.
 
 ### 1. Set up the Mac (once)
 
@@ -66,7 +66,7 @@ Settings › **Backup & Data** walks you through it. In short:
 
 1. At <https://console.cloud.google.com> create a free project, enable the **Google Drive API**, set up the OAuth consent screen (External; add your Gmail as a test user), and create an **OAuth client ID** of type **Web application** with the redirect URI shown on the Backup page (e.g. `http://localhost:3000/api/drive/callback`).
 2. Paste the Client ID and Client secret into the Backup page, then press **Connect Google Drive**. Do this **on the Mac** at `http://localhost:3000` (Google only allows plain `http` addresses for localhost).
-3. A `Beauty Parlour` folder appears in your Drive with `Backups`, `Reports`, `Receipts` and `Exports`. A backup is uploaded every day after the hour you choose (default 22:00), and whenever you press **Backup Now**.
+3. A `Beauty Parlour` folder appears in your Drive with `Backups`, `Reports`, `Receipts` and `Exports`. A backup is uploaded every hour while the app is running (skipped when nothing has changed), and whenever you press **Backup Now**. Every backup from the last 2 days is kept, then one per day for 30 days; older automatic backups are removed from the Mac and from Drive. You can switch to once a day in Settings › Backup & Data.
 
 The app can only see the files it creates in your Drive, nothing else.
 

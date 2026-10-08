@@ -8,7 +8,7 @@ The salon needs one dependable place for customers, visits, billing and reportin
 
 1. **Speed at the counter.** A returning customer is found by phone number and billed in 15–30 seconds. The New Visit screen combines check-in and billing in one page with an on-screen number pad, "Same as last time", big service tiles and one-tap payment methods.
 2. **Never lose or rewrite history.** Every visit, invoice and payment is permanent. Prices and tax are copied onto each invoice. Corrections are voids, not deletes.
-3. **Data stays under the owner's control.** A single database file on the salon's own computer, with daily backups to the owner's own Google Drive.
+3. **Data stays under the owner's control.** A single database file on the salon's own computer, with hourly backups to the owner's own Google Drive.
 4. **Simple to run.** No server administration: double-click to start on a Mac; the iPad opens it in Safari.
 
 ## 2. Architecture
@@ -74,7 +74,8 @@ Using Drive (files or Google Sheets) as the *primary* database was considered an
 What the app does with Drive instead:
 - The owner connects their Google account once (Settings › Backup & Data). The app asks only for the `drive.file` permission, which lets it see **only the files it creates**, never the rest of the Drive.
 - It creates `Beauty Parlour/` with `Backups/`, `Reports/`, `Receipts/` and `Exports/`.
-- **Automatic backup** every day after a chosen hour (default 22:00): a consistent snapshot of the database is saved in `data/backups/` and uploaded to `Backups/`. If the Mac was off at that hour, it runs as soon as the app is next running that day.
+- **Automatic backup** every hour (default; skipped when nothing has been saved since the last one), or once a day after a chosen hour. A consistent snapshot of the database is saved in `data/backups/` and uploaded to `Backups/`.
+- **Retention**: every automatic backup from the last 48 hours, then the newest of each day for `backup_keep_local` days (default 30), on the Mac and in Drive. Manual and pre-restore backups are only removed by the owner.
 - **Backup Now**, **Export All Data** (Excel workbook), **Save report to Drive** and **Save receipt to Drive** buttons.
 - **Restore** from a backup on the Mac, from a file, or straight from Drive (useful if the Mac is lost: install on a new Mac, connect Drive, restore). Every restore first takes a safety copy of the current data so it can be undone. Restores require typing RESTORE.
 - The refresh token is stored encrypted (AES-256-GCM) with a key kept in `data/secret.key`, outside the backups.

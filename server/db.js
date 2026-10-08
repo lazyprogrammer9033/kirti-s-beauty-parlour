@@ -73,6 +73,7 @@ const DEFAULT_SETTINGS = {
   staff_can_discount: '1',
   staff_can_custom_charge: '0',
   backup_auto_enabled: '1',
+  backup_frequency: 'hourly',
   backup_hour: '22',
   backup_keep_local: '30',
   smtp_host: '',

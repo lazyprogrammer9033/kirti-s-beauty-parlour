@@ -38,6 +38,7 @@ function fakeGoogle() {
     }
     if (u.pathname.startsWith('/drive/files/')) {
       const id = u.pathname.split('/').pop();
+      if (opts.method === 'DELETE') return files.delete(id) ? new Response(null, { status: 204 }) : json({ error: { message: 'not found' } }, 404);
       if (u.searchParams.get('alt') === 'media') return new Response(files.get(id).content);
       return json({ id, trashed: false });
     }
@@ -108,6 +109,14 @@ test('connect Google Drive, back up into Beauty Parlour/Backups, and restore fro
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.equal((await owner.get('/api/customers/search?q=after backup')).data.length, 0);
   assert.equal((await owner.get('/api/customers/search?q=before backup')).data.length, 1);
+
+  // Old automatic backups are removed from Drive as well as this computer.
+  const old = new Date(Date.now() - 60 * 86400000).toISOString();
+  g.files.set('fold', { id: 'fold', name: 'salon-backup-old-auto.db', parents: [backupsFolder] });
+  t.ctx.db().prepare("INSERT INTO backups (filename, kind, size_bytes, status, drive_status, drive_file_id, created_at, updated_at) VALUES ('salon-backup-old-auto.db', 'auto', 1, 'success', 'uploaded', 'fold', ?, ?)").run(old, old);
+  await t.ctx.backups.prune();
+  assert.equal(g.files.has('fold'), false);
+  assert.equal(t.ctx.db().prepare("SELECT drive_file_id FROM backups WHERE filename = 'salon-backup-old-auto.db'").get().drive_file_id, null);
 
   assert.equal((await owner.post('/api/drive/disconnect')).status, 200);
   assert.equal((await owner.get('/api/drive/status')).data.connected, false);

@@ -40,6 +40,10 @@ const EDITABLE = {
   staff_can_discount: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
   staff_can_custom_charge: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
   backup_auto_enabled: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
+  backup_frequency: (v) => {
+    if (!['hourly', 'daily'].includes(v)) throw new HttpError(400, 'Backup frequency must be hourly or daily');
+    return v;
+  },
   backup_hour: (v) => {
     const h = Number(v);
     if (!Number.isInteger(h) || h < 0 || h > 23) throw new HttpError(400, 'Backup hour must be 0–23');

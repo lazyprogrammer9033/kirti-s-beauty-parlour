@@ -139,6 +139,7 @@ main{max-width:520px;margin:0 auto;padding:24px 16px 40px}.card{background:#fff;
   const details = (a, tz) => `<dl class="box"><dt>When</dt><dd>${esc(when(a.startAt, tz))}</dd>
 ${a.services.length ? `<dt>Services</dt><dd>${esc(a.services.map((x) => x.name).join(', '))}</dd>` : ''}</dl>`;
   const callUs = () => (salon().phone ? `<a class="btn" href="tel:${esc(salon().phone.replace(/[^\d+]/g, ''))}">Call ${esc(salon().phone)}</a>` : '');
+  const bookAnother = () => (ctx.settings.get('appt_online_booking') === '1' ? '<a class="btn" href="/book">Book another appointment</a>' : '');
   const STATUS = { confirmed: 'Confirmed', completed: 'Completed', cancelled: 'Cancelled', no_show: 'Missed' };
 
   // Every page starts by checking the link and loading the appointment.
@@ -167,19 +168,20 @@ ${a.services.length ? `<dt>Services</dt><dd>${esc(a.services.map((x) => x.name).
     if (!a) return;
     const tz = salon().tz;
     if (!['booked', 'confirmed'].includes(a.status)) {
-      return page(res, 'Your appointment', `<h1>Hi ${esc(a.firstName)}</h1>${details(a, tz)}<div class="note ${a.status === 'cancelled' ? 'bad' : 'ok'}">This appointment is ${esc((STATUS[a.status] || a.status).toLowerCase())}.</div>${callUs()}`);
+      return page(res, 'Your appointment', `<h1>Hi ${esc(a.firstName)}</h1>${details(a, tz)}<div class="note ${a.status === 'cancelled' ? 'bad' : 'ok'}">This appointment is ${esc((STATUS[a.status] || a.status).toLowerCase())}.</div>${bookAnother()}${callUs()}`);
     }
     const can = changeable(ctx, a);
     page(res, 'Your appointment', `<h1>Hi ${esc(a.firstName)}</h1>${req.query.booked ? '<div class="note ok">You’re booked! We look forward to seeing you.</div>' : '<p>Here is your appointment.</p>'}${details(a, tz)}
-${a.status === 'confirmed' ? '<div class="note ok">You have confirmed this appointment. Thank you!</div>' : `<a class="btn primary" href="${esc(req.params.token)}/confirm">Confirm</a>`}
+${a.status === 'confirmed' ? '<div class="note ok">You have confirmed this appointment. Thank you!</div>' : `<form method="post" action="${esc(req.params.token)}/confirm"><button class="btn primary" type="submit">Confirm</button></form>`}
 ${can ? `<a class="btn" href="${esc(req.params.token)}/change">Change time</a><a class="btn danger" href="${esc(req.params.token)}/cancel">Cancel</a>` : '<p class="muted">It’s too close to your appointment to change it online. Please call us.</p>'}
-${callUs()}`);
+${bookAnother()}${callUs()}`);
   });
 
+  // Already confirmed (e.g. the Back button after confirming): show the appointment, not the question again.
   app.get('/a/:token/confirm', (req, res) => {
     const a = load(req, res);
     if (!a) return;
-    if (!['booked', 'confirmed'].includes(a.status)) return res.redirect(303, '../' + req.params.token);
+    if (a.status !== 'booked') return res.redirect(303, '../' + req.params.token);
     page(res, 'Confirm', `<h1>Confirm your appointment</h1>${details(a, salon().tz)}<form method="post"><button class="btn primary" type="submit">Yes, I’ll be there</button></form><a class="btn" href="../${esc(req.params.token)}">Back</a>`);
   });
 

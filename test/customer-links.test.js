@@ -66,6 +66,8 @@ test('customers confirm, move and cancel from the link in their email; nothing e
   assert.equal((await owner.get(`/api/appointments/${a.id}`)).data.status, 'confirmed');
   assert.match(sent.at(-1).subject, /^Confirmed by customer: Priya Shah/);
   assert.equal(sent.at(-1).to, 'salon@example.com');
+  // Back button after confirming lands on the appointment, not the question again.
+  assert.equal((await get(`/a/${token}/confirm`)).status, 303);
 
   // Change time: the 12:00 hour is taken by the other booking.
   const change = await (await get(`/a/${token}/change?date=${day(2)}`)).text();

@@ -15,6 +15,7 @@ after(async () => {
   if (t) await t.close();
 });
 
+const settle = () => new Promise((r) => setTimeout(r, 100));
 const get = (path) => fetch(pubBase + path, { redirect: 'manual' });
 const post = (path, form = {}) => fetch(pubBase + path, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(form) });
 const day = (n) => addDays(businessDate(new Date(), 'America/Toronto'), n);
@@ -64,6 +65,7 @@ test('customers confirm, move and cancel from the link in their email; nothing e
   assert.equal((await owner.get(`/api/appointments/${a.id}`)).data.status, 'booked');
   assert.equal((await post(`/a/${token}/confirm`)).status, 303);
   assert.equal((await owner.get(`/api/appointments/${a.id}`)).data.status, 'confirmed');
+  await settle(); // emails go out after the page answers
   assert.match(sent.at(-1).subject, /^Confirmed by customer: Priya Shah/);
   assert.equal(sent.at(-1).to, 'salon@example.com');
   // Back button after confirming lands on the appointment, not the question again.
@@ -80,8 +82,14 @@ test('customers confirm, move and cancel from the link in their email; nothing e
   assert.equal(moved.date, day(3));
   assert.equal(moved.time, '14:00');
   assert.equal(moved.durationMinutes, 10);
+  await settle();
   assert.ok(sent.some((m) => /^Moved by customer/.test(m.subject)));
   assert.ok(sent.some((m) => m.to === 'priya@example.com' && /has moved/.test(m.subject)));
+  // Tapping the same time again (double tap, old page) changes and emails nothing.
+  const before = sent.length;
+  assert.equal((await post(`/a/${token}/change`, { date: day(3), time: '14:00' })).status, 303);
+  await settle();
+  assert.equal(sent.length, before);
 
   // Cancel.
   assert.equal((await post(`/a/${token}/cancel`)).status, 303);
@@ -141,6 +149,7 @@ test('anyone can book online with the Book now link once it is switched on', asy
   assert.equal(appts.length, 1);
   assert.equal(appts[0].time, '10:00');
   assert.deepEqual(appts[0].services.map((s) => s.name), ['Eyebrows', 'Upper Lip']);
+  await settle();
   assert.ok(sent.some((m) => m.to === 'anita@example.com' && /You’re booked in/.test(m.html)));
   assert.ok(sent.some((m) => m.to === 'salon@example.com' && /^New online booking: Anita Roy/.test(m.subject)));
 

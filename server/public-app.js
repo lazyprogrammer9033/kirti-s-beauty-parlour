@@ -154,6 +154,12 @@ ${a.services.length ? `<dt>Services</dt><dd>${esc(a.services.map((x) => x.name).
     return a;
   }
 
+  // Runs after the page has answered, so a slow calendar or mail server never
+  // leaves the customer waiting (and tapping again).
+  function inBackground(fn) {
+    Promise.resolve().then(fn).catch((e) => console.error('After customer change:', e.message));
+  }
+
   async function afterCustomerChange(a, action, details2) {
     await ctx.calendar.syncAppointment(a.id).catch(() => {});
     const fresh = getAppointment(ctx.db(), a.id);
@@ -171,7 +177,7 @@ ${a.services.length ? `<dt>Services</dt><dd>${esc(a.services.map((x) => x.name).
       return page(res, 'Your appointment', `<h1>Hi ${esc(a.firstName)}</h1>${details(a, tz)}<div class="note ${a.status === 'cancelled' ? 'bad' : 'ok'}">This appointment is ${esc((STATUS[a.status] || a.status).toLowerCase())}.</div>${bookAnother()}${callUs()}`);
     }
     const can = changeable(ctx, a);
-    page(res, 'Your appointment', `<h1>Hi ${esc(a.firstName)}</h1>${req.query.booked ? '<div class="note ok">You’re booked! We look forward to seeing you.</div>' : '<p>Here is your appointment.</p>'}${details(a, tz)}
+    page(res, 'Your appointment', `<h1>Hi ${esc(a.firstName)}</h1>${req.query.booked ? '<div class="note ok">You’re booked! We look forward to seeing you.</div>' : req.query.moved ? '<div class="note ok">Done! Your appointment has moved to the time below. We’ve emailed you the details.</div>' : '<p>Here is your appointment.</p>'}${details(a, tz)}
 ${a.status === 'confirmed' ? '<div class="note ok">You have confirmed this appointment. Thank you!</div>' : `<form method="post" action="${esc(req.params.token)}/confirm"><button class="btn primary" type="submit">Confirm</button></form>`}
 ${can ? `<a class="btn" href="${esc(req.params.token)}/change">Change time</a><a class="btn danger" href="${esc(req.params.token)}/cancel">Cancel</a>` : '<p class="muted">It’s too close to your appointment to change it online. Please call us.</p>'}
 ${bookAnother()}${callUs()}`);
@@ -191,7 +197,7 @@ ${bookAnother()}${callUs()}`);
     if (a.status === 'booked') {
       ctx.db().prepare("UPDATE appointments SET status = 'confirmed', updated_at = ? WHERE id = ? AND status = 'booked'").run(nowIso(), a.id);
       audit(ctx.db(), customerReq(req), 'appointment.confirmed', 'appointment', a.id, { by: 'customer' });
-      await afterCustomerChange(a, 'confirmed');
+      inBackground(() => afterCustomerChange(a, 'confirmed'));
     }
     res.redirect(303, '../' + req.params.token);
   });
@@ -209,8 +215,10 @@ ${bookAnother()}${callUs()}`);
     if (changeable(ctx, a)) {
       ctx.db().prepare("UPDATE appointments SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('booked','confirmed')").run(nowIso(), a.id);
       audit(ctx.db(), customerReq(req), 'appointment.cancelled', 'appointment', a.id, { by: 'customer' });
-      const fresh = await afterCustomerChange(a, 'cancelled');
-      await emailCustomer(ctx, fresh, 'cancelled').catch(() => {});
+      inBackground(async () => {
+        const fresh = await afterCustomerChange(a, 'cancelled');
+        await emailCustomer(ctx, fresh, 'cancelled').catch(() => {});
+      });
     }
     res.redirect(303, '../' + req.params.token);
   });
@@ -240,15 +248,19 @@ ${slotPicker({ query, minutes, ignoreId: a.id, link: (p) => '?' + new URLSearchP
       return page(res, 'Change time', `<h1>That time was just taken</h1><p>Please pick another time.</p><a class="btn primary" href="change?date=${esc(isValidYmd(date) ? date : '')}">See free times</a>`, 409);
     }
     const start = zonedToUtc(date, time, salon().tz);
+    // Same time again (a second tap, or an old page): nothing to change or email.
+    if (start.toISOString() === new Date(a.startAt).toISOString()) return back();
     const end = new Date(start.getTime() + minutes * 60000);
     const from = a.startAt;
     const now = nowIso();
     ctx.db().prepare("UPDATE appointments SET start_at = ?, end_at = ?, duration_minutes = ?, reminder_sent_at = NULL, reminders_sent = NULL, scheduled_at = ?, updated_at = ? WHERE id = ? AND status IN ('booked','confirmed')")
       .run(start.toISOString(), end.toISOString(), minutes, now, now, a.id);
     audit(ctx.db(), customerReq(req), 'appointment.rescheduled', 'appointment', a.id, { by: 'customer', from, to: start.toISOString() });
-    const fresh = await afterCustomerChange(a, 'rescheduled', { from });
-    await emailCustomer(ctx, fresh, 'updated').catch(() => {});
-    back();
+    res.redirect(303, '../' + req.params.token + '?moved=1');
+    inBackground(async () => {
+      const fresh = await afterCustomerChange(a, 'rescheduled', { from });
+      await emailCustomer(ctx, fresh, 'updated').catch(() => {});
+    });
   });
 
   bookingRoutes(app, ctx, { page, esc, salonTz: () => salon().tz, timeLabel, slotPicker, RateLimiter });

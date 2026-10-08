@@ -130,15 +130,19 @@ ${error ? `<div class="note bad">${esc(error)}</div>` : ''}
       return aid;
     })();
 
-    await ctx.calendar.syncAppointment(id).catch(() => {});
-    const a = getAppointment(db, id);
-    try {
-      if (await emailCustomer(ctx, a, 'confirmation')) db.prepare('UPDATE appointments SET confirmation_sent_at = ? WHERE id = ?').run(nowIso(), id);
-    } catch (e) {
-      console.error('Could not email the customer:', e.message);
-    }
-    await notifySalon(ctx, a, 'booked').catch((e) => console.error('Could not email the salon:', e.message));
-    res.redirect(303, '/a/' + makeToken(ctx, a) + '?booked=1');
+    // Answer straight away; the calendar copy and emails follow in the background
+    // so a slow mail server never leaves the customer tapping Book again.
+    res.redirect(303, '/a/' + makeToken(ctx, getAppointment(db, id)) + '?booked=1');
+    (async () => {
+      await ctx.calendar.syncAppointment(id).catch(() => {});
+      const a = getAppointment(db, id);
+      try {
+        if (await emailCustomer(ctx, a, 'confirmation')) db.prepare('UPDATE appointments SET confirmation_sent_at = ? WHERE id = ?').run(nowIso(), id);
+      } catch (e) {
+        console.error('Could not email the customer:', e.message);
+      }
+      await notifySalon(ctx, a, 'booked').catch((e) => console.error('Could not email the salon:', e.message));
+    })();
   });
 
 }

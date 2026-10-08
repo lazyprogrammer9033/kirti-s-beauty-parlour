@@ -81,6 +81,10 @@ const DEFAULT_SETTINGS = {
   smtp_user: '',
   smtp_pass: '',
   smtp_from: '',
+  appt_default_minutes: '30',
+  appt_confirm_email: '1',
+  appt_reminder_email: '1',
+  appt_reminder_hours: '24',
 };
 
 // Sample catalogue used by tests and demos. A real salon starts empty and adds

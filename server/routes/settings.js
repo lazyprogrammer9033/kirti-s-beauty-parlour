@@ -68,11 +68,24 @@ const EDITABLE = {
   smtp_user: (v) => str(v, { max: 160 }) || '',
   smtp_pass: (v) => String(v || ''),
   smtp_from: (v) => str(v, { max: 160 }) || '',
+  appt_default_minutes: (v) => {
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 5 || n > 480) throw new HttpError(400, 'Default length must be 5–480 minutes');
+    return String(n);
+  },
+  appt_confirm_email: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
+  appt_reminder_email: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
+  appt_reminder_hours: (v) => {
+    const n = Number(v);
+    if (![2, 4, 12, 24, 48].includes(n)) throw new HttpError(400, 'Choose when to send reminders');
+    return String(n);
+  },
 };
 
 // What staff need for billing and receipts; everything else is owner-only.
 const STAFF_VISIBLE = ['business_name', 'business_address', 'business_phone', 'business_email', 'business_website', 'business_logo', 'currency',
-  'tax_name', 'tax_rate_bp', 'prices_include_tax', 'receipt_footer', 'staff_can_discount', 'staff_can_custom_charge', 'timezone', 'tax_number', 'receipt_show_tax_number'];
+  'tax_name', 'tax_rate_bp', 'prices_include_tax', 'receipt_footer', 'staff_can_discount', 'staff_can_custom_charge', 'timezone', 'tax_number', 'receipt_show_tax_number',
+  'appt_default_minutes', 'appt_confirm_email'];
 
 module.exports = function settingsRoutes(api, ctx) {
   const owner = requirePerm('settings.manage');
@@ -82,6 +95,7 @@ module.exports = function settingsRoutes(api, ctx) {
     delete all.drive_folders;
     const out = can(req.user, 'settings.manage') ? all : Object.fromEntries(STAFF_VISIBLE.map((k) => [k, all[k]]));
     out.email_configured = ctx.mailer.configured() ? '1' : '0';
+    out.calendar_connected = ctx.calendar.isConnected() ? '1' : '0';
     res.json(out);
   });
 

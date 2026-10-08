@@ -504,11 +504,31 @@ a.list-row:hover { background: var(--surface-2); border-radius: 12px; }
 .good .bs-icon { color: var(--ok); }
 .warn .bs-icon { color: var(--warn); }
 .bad .bs-icon { color: var(--danger); }
-.coming { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 44px 24px; color: var(--primary); }
-.coming h2, .coming p { color: var(--ink); }
-.coming-list { list-style: none; padding: 0; margin: 8px 0 16px; display: flex; flex-direction: column; gap: 8px; text-align: left; color: var(--ink-2); }
-.coming-list li { display: flex; gap: 10px; align-items: center; }
-.coming-list .icon { color: var(--ok); }
+/* ---------- Appointments ---------- */
+.week-nav { display: flex; align-items: center; gap: 8px; }
+.week-nav h3 { margin: 0; }
+.week-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.week-day { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 4px; border-radius: 16px; border: 1px solid var(--line); background: #fff; color: var(--ink-2); min-height: 76px; }
+.week-day.today .wd-num { color: var(--primary); }
+.week-day.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.week-day.on .wd-num { color: #fff; }
+.wd-name { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.wd-num { font-size: 1.3rem; font-weight: 600; }
+.wd-count { font-size: 0.75rem; min-height: 1em; font-weight: 600; }
+.week-day:not(.on) .wd-count { color: var(--primary); }
+.appt-card { display: flex; align-items: center; gap: 16px; width: 100%; text-align: left; padding: 16px 18px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow); color: var(--ink); }
+.appt-card:hover { border-color: var(--primary-soft); }
+.appt-card.dim { opacity: 0.6; }
+.appt-card .icon { color: var(--muted); flex: none; }
+.appt-time { display: flex; flex-direction: column; min-width: 72px; }
+.appt-name { font-weight: 600; }
+.appt-name .badge { margin-left: 8px; }
+.appt-sync { display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+.appt-sync.ok { color: var(--ok); }
+.appt-sync.warn { color: var(--warn); }
+.appt-sync .icon { color: inherit; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 640px) { .grid-3 { grid-template-columns: 1fr; } .week-day { min-height: 64px; padding: 8px 2px; } }
 
 /* ---------- Modal & toast ---------- */
 .overlay { position: fixed; inset: 0; z-index: 100; background: rgba(45, 29, 39, 0.38); backdrop-filter: blur(3px); display: grid; place-items: center; padding: 20px; animation: fade 0.15s ease; }

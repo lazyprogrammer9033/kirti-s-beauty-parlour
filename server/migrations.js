@@ -308,4 +308,22 @@ CREATE UNIQUE INDEX customers_client_ref ON customers(client_ref) WHERE client_r
 CREATE UNIQUE INDEX visits_client_ref ON visits(client_ref) WHERE client_ref IS NOT NULL;
 `,
   },
+  {
+    id: 3,
+    name: 'appointments calendar sync',
+    // google_event_id/google_calendar_id point at the copy of the booking in the
+    // owner's Google Calendar. sync_status: pending | synced | failed (NULL when
+    // no calendar is connected). duration is kept so a reschedule keeps its length.
+    sql: `
+ALTER TABLE appointments ADD COLUMN duration_minutes INTEGER;
+ALTER TABLE appointments ADD COLUMN google_event_id TEXT;
+ALTER TABLE appointments ADD COLUMN google_calendar_id TEXT;
+ALTER TABLE appointments ADD COLUMN sync_status TEXT;
+ALTER TABLE appointments ADD COLUMN sync_error TEXT;
+ALTER TABLE appointments ADD COLUMN confirmation_sent_at TEXT;
+CREATE INDEX idx_appointments_sync ON appointments(sync_status) WHERE sync_status IN ('pending','failed');
+CREATE INDEX idx_appointment_services_appt ON appointment_services(appointment_id);
+CREATE INDEX idx_visits_appointment ON visits(appointment_id) WHERE appointment_id IS NOT NULL;
+`,
+  },
 ];

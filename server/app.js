@@ -10,6 +10,8 @@ const { HttpError } = require('./lib/http');
 const { BackupService } = require('./lib/backup');
 const { DriveService } = require('./lib/drive');
 const { Mailer } = require('./lib/email');
+const { CalendarService } = require('./lib/calendar');
+const { AppointmentScheduler } = require('./lib/appointments');
 
 /**
  * Builds the application. Options:
@@ -47,6 +49,8 @@ function createApp(options = {}) {
   ctx.drive = new DriveService(ctx, options.google || {});
   ctx.backups = new BackupService(ctx);
   ctx.mailer = new Mailer(ctx, options.mailTransport);
+  ctx.calendar = new CalendarService(ctx, options.google || {});
+  ctx.appointments = new AppointmentScheduler(ctx);
 
   const app = express();
   app.set('trust proxy', options.trustProxy ?? 'loopback');
@@ -87,6 +91,7 @@ function createApp(options = {}) {
   api.use((req, res, next) => (req.user ? next() : next(new HttpError(401, 'Please sign in'))));
   require('./routes/customers')(api, ctx);
   require('./routes/services')(api, ctx);
+  require('./routes/appointments')(api, ctx);
   require('./routes/visits')(api, ctx);
   require('./routes/invoices')(api, ctx);
   require('./routes/dashboard')(api, ctx);
@@ -112,12 +117,16 @@ function createApp(options = {}) {
     res.status(status).json({ error: status >= 500 && !err.expose ? 'Something went wrong. Please try again.' : err.message, ...(err.data || {}) });
   });
 
-  if (options.scheduler !== false) ctx.backups.startScheduler();
+  if (options.scheduler !== false) {
+    ctx.backups.startScheduler();
+    ctx.appointments.start();
+  }
 
   app.locals.ctx = ctx;
   app.locals.can = can;
   app.locals.close = () => {
     ctx.backups.stopScheduler();
+    ctx.appointments.stop();
     holder.close();
   };
   return app;

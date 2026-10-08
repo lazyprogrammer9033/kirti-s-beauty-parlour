@@ -4,7 +4,7 @@ const { nowIso } = require('./time');
 const { encrypt, decrypt } = require('./secrets');
 
 // Settings whose values are encrypted at rest and never sent to the browser.
-const SECRET_KEYS = new Set(['smtp_pass', 'drive_client_secret', 'drive_refresh_token']);
+const SECRET_KEYS = new Set(['smtp_pass', 'drive_client_secret', 'drive_refresh_token', 'calendar_refresh_token']);
 
 class Settings {
   constructor(holder, key) {

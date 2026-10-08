@@ -118,7 +118,7 @@ Concerns the owner should know about:
 
 ## 7. Designed for the future
 
-- **Appointments:** tables already exist and visits carry `appointment_id`; a calendar can be added without changing existing data.
+- **Appointments:** built (migration 3). One-way copy to Google Calendar through a separate Google sign-in (`calendar.events` + `calendar.calendarlist.readonly`) sharing the Drive OAuth client and redirect URI; failed copies are retried every 5 minutes. Visits started from a booking carry `appointment_id` and complete it.
 - **Staff commission / reports:** every visit service stores who performed it.
 - **Loyalty, memberships, gift cards, packages:** new tables linked to `customers` and `invoices`; invoice lines already support non-service items.
 - **SMS / email / WhatsApp reminders and birthday messages:** customers already store phone, email and date of birth; a scheduler exists (used by backups).

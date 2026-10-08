@@ -1,6 +1,8 @@
 import { h, clear, icon, money, fmtDate, fmtDateShort, fmtTime, methodLabel, avatar, modal, field, toast, emptyState } from '../ui.js';
 import { api } from '../api.js';
 import { customerFormModal, statusBadge } from './shared.js';
+import { session } from '../app.js';
+import { apptBadge, bookingModal, detailsModal } from './appointments.js';
 
 function stat(label, value) {
   return h('div.mini-stat', h('span.mini-label', label), h('span.mini-value', value));
@@ -8,7 +10,7 @@ function stat(label, value) {
 
 export async function render(view, { params }) {
   const id = Number(params[0]);
-  const c = await api.get('/customers/' + id);
+  const [c, appts] = await Promise.all([api.get('/customers/' + id), session.can('appointments.view') ? api.get('/appointments?customerId=' + id) : []]);
   const s = c.stats;
 
   const addNote = () => {
@@ -44,6 +46,7 @@ export async function render(view, { params }) {
           h('span.code', c.customerCode)))),
     h('div.profile-actions',
       h('button.btn.ghost', { type: 'button', onclick: async () => { if (await customerFormModal({ customer: c })) render(view, { params }); } }, icon('edit', 18), 'Edit'),
+      session.can('appointments.manage') ? h('button.btn.ghost', { type: 'button', onclick: async () => { if (await bookingModal({ customerId: id })) render(view, { params }); } }, icon('calendar', 18), 'Book') : null,
       h('a.btn.soft', { href: '#/visit?customer=' + id }, icon('sparkles', 18), 'New Visit'),
       h('a.btn.primary', { href: '#/visit?customer=' + id + '&step=bill' }, icon('receipt', 18), 'Create Bill')));
 
@@ -74,6 +77,18 @@ export async function render(view, { params }) {
       ? h('div.notes', c.notes.map((n) => h('div.note', h('p', n.note), h('span.muted.small', `${n.author || 'Staff'} · ${fmtDateShort(n.createdAt)}`))))
       : h('p.muted', 'No notes yet. Add preferences, allergies or anything staff should know.'));
 
+  // Upcoming first (soonest at the top), then the most recent past ones.
+  const nowIso = new Date().toISOString();
+  const upcoming = appts.filter((a) => a.endAt >= nowIso && ['booked', 'confirmed'].includes(a.status)).reverse();
+  const past = appts.filter((a) => !upcoming.includes(a)).slice(0, 5);
+  const apptRow = (a) => h('button.lookup-row', { type: 'button', onclick: () => detailsModal(a, () => render(view, { params })) },
+    h('div.grow', h('strong', `${fmtDate(a.startAt)}, ${fmtTime(a.startAt)}`), h('div.muted.small', a.services.map((x) => x.name).join(', ') || '—')),
+    apptBadge(a.status));
+  const appointments = appts.length || session.can('appointments.manage') ? h('div.card',
+    h('div.card-head', h('h3', 'Appointments')),
+    upcoming.length ? h('div.stack', upcoming.map(apptRow)) : h('p.muted', 'Nothing booked.'),
+    past.length ? h('details.more', h('summary', 'Past appointments'), h('div.stack', past.map(apptRow))) : null) : null;
+
   const history = h('div.card',
     h('div.card-head', h('h3', 'Visit history'), h('span.muted.small', `${c.visits.length} record${c.visits.length === 1 ? '' : 's'}`)),
     c.visits.length
@@ -95,5 +110,5 @@ export async function render(view, { params }) {
   clear(view,
     h('a.back', { href: '#/customers' }, icon('chevronLeft', 18), 'Customers'),
     header,
-    h('div.profile-grid', h('div.stack', summary, notes, details), history));
+    h('div.profile-grid', h('div.stack', summary, appointments, notes, details), history));
 }

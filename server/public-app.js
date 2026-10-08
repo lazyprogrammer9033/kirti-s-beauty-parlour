@@ -69,7 +69,7 @@ function createPublicApp(ctx) {
   // A month calendar showing how many times are free each day, then the free
   // times on the chosen day as buttons. link({ date } | { month }) builds the
   // page's own URL; form is the <form ...> tag the time buttons submit with.
-  function slotPicker({ query, minutes, ignoreId, link, form, hidden = '', skipTime }) {
+  function slotPicker({ query, minutes, ignoreId, link, form, hidden = '', skip }) {
     const tz = salon().tz;
     const today = businessDate(new Date(), tz);
     const firstMonth = today.slice(0, 7);
@@ -91,14 +91,15 @@ function createPublicApp(ctx) {
     const lead = new Date(month + '-01T12:00:00Z').getUTCDay();
     const cell = (d) => {
       const n = Number(d.date.slice(8));
-      if (d.state === 'open') return `<a class="d${d.date === date ? ' on' : ''}" href="${esc(link({ date: d.date }))}">${n}<small>${d.free} free</small></a>`;
+      const free = d.free - (skip && d.date === skip.date ? 1 : 0);
+      if (d.state === 'open') return `<a class="d${d.date === date ? ' on' : ''}" href="${esc(link({ date: d.date }) + '#times')}">${n}<small>${free} free</small></a>`;
       return `<span class="d ${d.state}">${n}<small>${d.state === 'full' ? 'Full' : d.state === 'closed' ? 'Closed' : '&nbsp;'}</small></span>`;
     };
-    const slots = date ? freeSlots(ctx, date, minutes, ignoreId).filter((t) => !(skipTime && skipTime(date, t))) : [];
+    const slots = date ? freeSlots(ctx, date, minutes, ignoreId).filter((t) => !(skip && skip.date === date && skip.time === t)) : [];
     const anyFree = days.some((d) => d.state === 'open');
     return `<div class="mon">${month > firstMonth ? `<a href="${esc(link({ month: shift(-1) }))}" aria-label="Previous month">‹</a>` : '<span>‹</span>'}<b>${esc(monthName)}</b>${month < lastMonth ? `<a href="${esc(link({ month: shift(1) }))}" aria-label="Next month">›</a>` : '<span>›</span>'}</div>
 <div class="cal">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((w) => `<span class="wd">${w}</span>`).join('')}${'<span></span>'.repeat(lead)}${days.map(cell).join('')}</div>
-${date && slots.length ? `<h3>${esc(dayLabel(date))} · ${slots.length} time${slots.length === 1 ? '' : 's'} free</h3>
+${date && slots.length ? `<h3 id="times">${esc(dayLabel(date))} · ${slots.length} time${slots.length === 1 ? '' : 's'} free</h3>
 ${form}${hidden}<input type="hidden" name="date" value="${esc(date)}"><div class="times">${slots
   .map((t) => `<button class="chip" type="submit" name="time" value="${t}">${esc(timeLabel(t))}</button>`).join('')}</div></form>`
   : `<div class="note bad">${date && anyFree ? `No free times on ${esc(dayLabel(date))}. Please pick another day.` : 'There are no free times online this month. Try the next month, or call us.'}</div>`}`;
@@ -233,8 +234,31 @@ ${bookAnother()}${callUs()}`);
     const currentTime = localTime(new Date(a.startAt), tz);
     const query = req.query.date || req.query.month ? req.query : { date: current };
     page(res, 'Change time', `<h1>Pick a new time</h1><p class="muted">Now: ${esc(when(a.startAt, tz))} · ${minutes} min</p>
-${slotPicker({ query, minutes, ignoreId: a.id, link: (p) => '?' + new URLSearchParams(p), form: '<form method="post">', skipTime: (d, t) => d === current && t === currentTime })}
+${slotPicker({ query, minutes, ignoreId: a.id, link: (p) => '?' + new URLSearchParams(p), form: '<form method="get" action="review">', skip: { date: current, time: currentTime } })}
 <a class="btn" href="../${esc(req.params.token)}">Back</a>${callUs()}`);
+  });
+
+  // Picking a time only shows it; nothing changes until the customer presses Move.
+  app.get('/a/:token/review', (req, res) => {
+    const a = load(req, res);
+    if (!a) return;
+    const back = () => res.redirect(303, '../' + req.params.token);
+    if (!changeable(ctx, a)) return back();
+    const { date, time } = req.query;
+    if (!isValidYmd(date) || !isValidHm(time)) return res.redirect(303, 'change');
+    const tz = salon().tz;
+    const start = zonedToUtc(date, time, tz);
+    // Already at that time (e.g. Back after moving): show the appointment.
+    if (start.toISOString() === new Date(a.startAt).toISOString()) return back();
+    const minutes = a.durationMinutes || Math.round((Date.parse(a.endAt) - Date.parse(a.startAt)) / 60000) || 30;
+    if (!freeSlots(ctx, date, minutes, a.id).includes(time)) {
+      return page(res, 'Change time', `<h1>That time was just taken</h1><p>Please pick another time.</p><a class="btn primary" href="change?date=${esc(date)}">See free times</a>`, 409);
+    }
+    page(res, 'Move appointment', `<h1>Move your appointment?</h1>
+<dl class="box"><dt>From</dt><dd>${esc(when(a.startAt, tz))}</dd><dt>To</dt><dd>${esc(when(start.toISOString(), tz))}</dd>
+${a.services.length ? `<dt>Services</dt><dd>${esc(a.services.map((x) => x.name).join(', '))}</dd>` : ''}</dl>
+<form method="post" action="change"><input type="hidden" name="date" value="${esc(date)}"><input type="hidden" name="time" value="${esc(time)}"><button class="btn primary" type="submit">Yes, move it</button></form>
+<a class="btn" href="change?date=${esc(date)}">Pick a different time</a><a class="btn" href="../${esc(req.params.token)}">Keep my current time</a>`);
   });
 
   app.post('/a/:token/change', async (req, res) => {

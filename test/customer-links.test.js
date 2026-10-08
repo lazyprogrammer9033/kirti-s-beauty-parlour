@@ -77,7 +77,15 @@ test('customers confirm, move and cancel from the link in their email; nothing e
   assert.doesNotMatch(change, /value="12:00"/);
   assert.doesNotMatch(change, /value="12:30"/);
   assert.equal((await post(`/a/${token}/change`, { date: day(2), time: '12:15' })).status, 409);
+  // Picking a time shows a review page first; nothing moves until "Yes, move it".
+  assert.match(change, /action="review"/);
+  const review = await (await get(`/a/${token}/review?date=${day(3)}&time=14:00`)).text();
+  assert.match(review, /Move your appointment\?/);
+  assert.equal((await owner.get(`/api/appointments/${a.id}`)).data.date, day(2));
+  assert.equal((await get(`/a/${token}/review?date=${day(2)}&time=12:15`)).status, 409);
   assert.equal((await post(`/a/${token}/change`, { date: day(3), time: '14:00' })).status, 303);
+  // Back to the review page after moving shows the appointment instead.
+  assert.equal((await get(`/a/${token}/review?date=${day(3)}&time=14:00`)).status, 303);
   const moved = (await owner.get(`/api/appointments/${a.id}`)).data;
   assert.equal(moved.date, day(3));
   assert.equal(moved.time, '14:00');

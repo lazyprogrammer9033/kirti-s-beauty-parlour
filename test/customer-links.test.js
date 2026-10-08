@@ -103,3 +103,49 @@ test('bookings too close to start must be changed by phone', async () => {
   assert.equal((await post(`/a/${token}/cancel`)).status, 303);
   assert.equal((await owner.get(`/api/appointments/${a.id}`)).data.status, 'booked');
 });
+
+test('anyone can book online with the Book now link once it is switched on', async () => {
+  const owner = t.client();
+  await owner.post('/api/auth/login', { username: 'kirti', password: 'Secret-pass-1' });
+  const sent = [];
+  t.ctx.mailer.transportOverride = { sendMail: async (m) => sent.push(m) };
+  assert.equal((await get('/book')).status, 404); // off by default
+  await owner.put('/api/settings', { appt_online_booking: true });
+
+  const svcs = (await owner.get('/api/services')).data.flatMap((c) => c.services);
+  const brows = svcs.find((s) => s.name === 'Eyebrows');
+  const lip = svcs.find((s) => s.name === 'Upper Lip');
+  const list = await (await get('/book')).text();
+  assert.match(list, new RegExp(`name="s" value="${brows.id}"`));
+
+  const times = await (await get(`/book/time?s=${brows.id}&s=${lip.id}&date=${day(5)}`)).text();
+  assert.match(times, /20 min/);
+  assert.match(times, /value="10:00"/);
+  assert.equal((await get(`/book/details?s=${brows.id},${lip.id}&date=${day(5)}&time=10:00`)).status, 200);
+
+  // Missing phone is caught; the bot trap books nothing.
+  assert.equal((await post('/book', { s: `${brows.id},${lip.id}`, date: day(5), time: '10:00', name: 'Anita Roy', phone: '12' })).status, 400);
+  await post('/book', { s: `${brows.id}`, date: day(5), time: '10:00', name: 'Bot', phone: '4165559999', website: 'x' });
+  assert.equal((await owner.get('/api/customers/search?q=4165559999')).data.length, 0);
+
+  const r = await post('/book', { s: `${brows.id},${lip.id}`, date: day(5), time: '10:00', name: 'Anita Roy', phone: '(416) 555-0303', email: 'anita@example.com', notes: 'First time' });
+  assert.equal(r.status, 303);
+  assert.match(r.headers.get('location'), /^\/a\/[\w-]+\?booked=1$/);
+  assert.match(await (await get(r.headers.get('location'))).text(), /You’re booked/);
+
+  const cust = (await owner.get('/api/customers/search?q=4165550303')).data[0];
+  assert.equal(cust.fullName, 'Anita Roy');
+  const appts = (await owner.get(`/api/appointments?customerId=${cust.id}`)).data;
+  assert.equal(appts.length, 1);
+  assert.equal(appts[0].time, '10:00');
+  assert.deepEqual(appts[0].services.map((s) => s.name), ['Eyebrows', 'Upper Lip']);
+  assert.ok(sent.some((m) => m.to === 'anita@example.com' && /You’re booked in/.test(m.html)));
+  assert.ok(sent.some((m) => m.to === 'salon@example.com' && /^New online booking: Anita Roy/.test(m.subject)));
+
+  // The same slot can't be booked twice; a returning customer is matched by phone.
+  assert.equal((await post('/book', { s: `${brows.id}`, date: day(5), time: '10:00', name: 'Someone Else', phone: '4165550404' })).status, 409);
+  const again = await post('/book', { s: `${brows.id}`, date: day(6), time: '11:00', name: 'Anita', phone: '416 555 0303' });
+  assert.equal(again.status, 303);
+  assert.equal((await owner.get(`/api/appointments?customerId=${cust.id}`)).data.length, 2);
+  assert.equal((await owner.get('/api/customers/search?q=4165550303')).data.length, 1);
+});

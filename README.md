@@ -90,6 +90,8 @@ Uses the same Google app as step 4.
 
 Confirmation and reminder emails to customers go out from the mailbox set up in step 6.
 
+**Customer booking page (optional).** The app also serves a small customer-only site on `127.0.0.1:3080`: a "Book now" page (`/book`) and one page per booking (`/a/<signed link>`) where customers confirm, cancel or pick a new free time. Point a tunnel at that port only, for example Tailscale Funnel (`tailscale funnel --bg 3080`, free, keeps the same address), then in Settings › Appointments › Customer booking page enter the https address and tick the options. Nothing else in the app is reachable through it.
+
 ### 6. Email receipts (optional)
 
 Settings › **Email**. For Gmail: turn on 2-Step Verification, create an **App password** at <https://myaccount.google.com/apppasswords>, then enter `smtp.gmail.com`, port `587`, your Gmail address and the app password. Press **Send test**.

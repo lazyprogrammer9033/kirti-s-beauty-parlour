@@ -5,6 +5,7 @@ const { readToken, freeSlots, upcomingOpenDays, changeable } = require('./lib/cu
 const { getAppointment, emailCustomer, notifySalon } = require('./lib/appointments');
 const { audit } = require('./lib/audit');
 const { defaultLogo } = require('./lib/brand');
+const { bookingRoutes } = require('./public-booking');
 const { nowIso, zonedToUtc, isValidYmd, isValidHm, businessDate, localTime } = require('./lib/time');
 
 // The only part of the salon app that is reachable from the internet (through
@@ -82,7 +83,12 @@ main{max-width:520px;margin:0 auto;padding:24px 16px 40px}.card{background:#fff;
 .note{padding:12px 16px;border-radius:14px;margin:12px 0}.ok{background:var(--okbg);color:var(--ok)}.bad{background:var(--badbg);color:var(--bad)}
 .muted{color:var(--muted);font-size:14px}.days,.times{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 16px}
 .chip{padding:10px 14px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--ink);text-decoration:none;font-size:15px;font-family:inherit;cursor:pointer}
-.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}footer{text-align:center;margin-top:18px}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.cat{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 0 6px}
+.svc{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;margin:8px 0;cursor:pointer}
+.svc input{width:20px;height:20px;accent-color:var(--p)}.grow{flex:1}
+.fld{display:block;font-size:14px;color:var(--muted);margin:12px 0}.fld input,.fld textarea{display:block;width:100%;margin-top:4px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;font:inherit;color:var(--ink);background:#fff}
+.hp{position:absolute;left:-9999px}footer{text-align:center;margin-top:18px}
 </style></head><body><main><div class="brand">${logo}<div class="name">${esc(s.name)}</div></div><div class="card">${body}</div>
 <footer class="muted">${[s.address, s.phone].filter(Boolean).map(esc).join(' · ')}</footer></main></body></html>`);
   }
@@ -121,7 +127,7 @@ ${a.services.length ? `<dt>Services</dt><dd>${esc(a.services.map((x) => x.name).
       return page(res, 'Your appointment', `<h1>Hi ${esc(a.firstName)}</h1>${details(a, tz)}<div class="note ${a.status === 'cancelled' ? 'bad' : 'ok'}">This appointment is ${esc((STATUS[a.status] || a.status).toLowerCase())}.</div>${callUs()}`);
     }
     const can = changeable(ctx, a);
-    page(res, 'Your appointment', `<h1>Hi ${esc(a.firstName)}</h1><p>Here is your appointment.</p>${details(a, tz)}
+    page(res, 'Your appointment', `<h1>Hi ${esc(a.firstName)}</h1>${req.query.booked ? '<div class="note ok">You’re booked! We look forward to seeing you.</div>' : '<p>Here is your appointment.</p>'}${details(a, tz)}
 ${a.status === 'confirmed' ? '<div class="note ok">You have confirmed this appointment. Thank you!</div>' : `<a class="btn primary" href="${esc(req.params.token)}/confirm">Confirm</a>`}
 ${can ? `<a class="btn" href="${esc(req.params.token)}/change">Change time</a><a class="btn danger" href="${esc(req.params.token)}/cancel">Cancel</a>` : '<p class="muted">It’s too close to your appointment to change it online. Please call us.</p>'}
 ${callUs()}`);
@@ -204,6 +210,8 @@ ${days.length ? `<div class="days">${days.map((d) => `<a class="chip${d === day 
     await emailCustomer(ctx, fresh, 'updated').catch(() => {});
     back();
   });
+
+  bookingRoutes(app, ctx, { page, esc, salonTz: () => salon().tz, dayLabel, timeLabel, RateLimiter });
 
   app.get('/healthz', (req, res) => res.type('text/plain').send('ok'));
   app.use((req, res) => page(res, 'Not found', '<h1>Page not found</h1><p>Please use the link from your appointment email.</p>', 404));

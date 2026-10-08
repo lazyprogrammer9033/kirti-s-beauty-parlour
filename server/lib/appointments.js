@@ -58,16 +58,16 @@ async function notifySalon(ctx, a, action, extra = {}) {
   if (!to || !ctx.mailer.configured()) return false;
   const tz = ctx.settings.timezone();
   const fmt = (iso) => new Date(iso).toLocaleString('en-CA', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  const verbs = { confirmed: 'Confirmed', cancelled: 'Cancelled', rescheduled: 'Moved' };
+  const verbs = { confirmed: 'Confirmed by customer', cancelled: 'Cancelled by customer', rescheduled: 'Moved by customer', booked: 'New online booking' };
   const lines = [
-    `${a.customerName} (${a.customerPhone}) ${action} their appointment online.`,
+    action === 'booked' ? `${a.customerName} (${a.customerPhone}) booked online.${a.notes ? ' Note: ' + a.notes : ''}` : `${a.customerName} (${a.customerPhone}) ${action} their appointment online.`,
     '',
     action === 'rescheduled' ? `Was: ${fmt(extra.from)}\nNow: ${fmt(a.startAt)}` : `When: ${fmt(a.startAt)}`,
     a.services.length ? `Services: ${a.services.map((x) => x.name).join(', ')}` : null,
     '',
     'The salon app and Google Calendar are already updated.',
   ].filter((l) => l !== null);
-  await ctx.mailer.send({ to, subject: `${verbs[action]} by customer: ${a.customerName}, ${fmt(a.startAt)}`, text: lines.join('\n') });
+  await ctx.mailer.send({ to, subject: `${verbs[action]}: ${a.customerName}, ${fmt(a.startAt)}`, text: lines.join('\n') });
   return true;
 }
 

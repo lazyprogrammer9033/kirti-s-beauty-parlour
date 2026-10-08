@@ -78,6 +78,7 @@ const EDITABLE = {
     if (s && !/^https:\/\/[a-z0-9.-]+(:\d+)?\/?$/i.test(s)) throw new HttpError(400, 'The customer page address must start with https://');
     return s.replace(/\/$/, '');
   },
+  appt_online_booking: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
   appt_customer_links: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
   appt_open_time: (v) => {
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v))) throw new HttpError(400, 'Opening time must look like 10:00');

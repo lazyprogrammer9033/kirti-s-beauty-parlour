@@ -456,13 +456,15 @@ async function appointments(body, { query, rerender }) {
   const dayBoxes = [['1','Mon'],['2','Tue'],['3','Wed'],['4','Thu'],['5','Fri'],['6','Sat'],['0','Sun']].map(([v, l]) => [v, h('input', { type: 'checkbox', checked: openDays.has(v) }), l]);
   const linkInputs = settingsForm(body, s, (f) => [
     h('label.check', f('appt_customer_links', { type: 'checkbox' }), ' Customers can confirm, cancel or change their booking online'),
+    h('label.check', f('appt_online_booking', { type: 'checkbox' }), ' Anyone can book online with a “Book now” link'),
+    s.public_base_url ? h('p.small.muted', 'Book now link for Instagram and Google: ', h('strong', s.public_base_url + '/book')) : null,
     field('Customer page address', f('public_base_url', { placeholder: 'https://book.yoursalon.com' }), 'The secure web address of the tunnel to this computer. Only the booking pages are reachable there; the rest of the app stays on your Wi-Fi.'),
     h('div.grid-3',
       field('Opens', f('appt_open_time', { inputType: 'time' })),
       field('Closes', f('appt_close_time', { inputType: 'time' })),
       field('Changes allowed until', f('appt_change_cutoff_hours', { type: 'select', options: [[0, 'Start time'], [2, '2 hours before'], [4, '4 hours before'], [12, '12 hours before'], [24, '1 day before'], [48, '2 days before']] }))),
     h('div.field', h('span.label', 'Open days (for times customers can pick)'), h('div.row', dayBoxes.map(([, box, l]) => h('label.check', box, ' ' + l)))),
-  ], { title: 'Customer booking page', intro: 'With this on, the buttons in your emails open a page where the customer taps Confirm, Cancel or picks a free time. You get an email whenever they do, and the calendar updates itself.' });
+  ], { title: 'Customer booking page', intro: 'Customers can book, confirm, cancel or pick a new free time themselves. You get an email whenever they do, and the app and calendar update themselves.' });
   // Open days are saved with the rest of that form.
   linkInputs.appt_open_days = { type: 'text', get value() { return dayBoxes.filter(([, b]) => b.checked).map(([v]) => v).join(','); } };
 

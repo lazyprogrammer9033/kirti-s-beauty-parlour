@@ -68,11 +68,49 @@ const EDITABLE = {
   smtp_user: (v) => str(v, { max: 160 }) || '',
   smtp_pass: (v) => String(v || ''),
   smtp_from: (v) => str(v, { max: 160 }) || '',
+  appt_default_minutes: (v) => {
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 5 || n > 480) throw new HttpError(400, 'Default length must be 5–480 minutes');
+    return String(n);
+  },
+  public_base_url: (v) => {
+    const s = str(v, { max: 200 }) || '';
+    if (s && !/^https:\/\/[a-z0-9.-]+(:\d+)?\/?$/i.test(s)) throw new HttpError(400, 'The customer page address must start with https://');
+    return s.replace(/\/$/, '');
+  },
+  appt_online_booking: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
+  appt_customer_links: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
+  appt_open_time: (v) => {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v))) throw new HttpError(400, 'Opening time must look like 10:00');
+    return String(v);
+  },
+  appt_close_time: (v) => {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v))) throw new HttpError(400, 'Closing time must look like 19:00');
+    return String(v);
+  },
+  appt_open_days: (v) => {
+    const days = [...new Set(String(Array.isArray(v) ? v.join(',') : v).split(',').filter((x) => x !== '').map(Number))];
+    if (days.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) throw new HttpError(400, 'Invalid opening days');
+    return days.sort().join(',');
+  },
+  appt_change_cutoff_hours: (v) => {
+    const n = Number(v);
+    if (![0, 2, 4, 12, 24, 48].includes(n)) throw new HttpError(400, 'Choose how close to the appointment customers can change it');
+    return String(n);
+  },
+  appt_confirm_email: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
+  appt_reminder_email: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
+  appt_reminder_stages: (v) => {
+    const list = Array.isArray(v) ? v : String(v || '').split(',').filter(Boolean);
+    if (list.some((x) => !['1w', '1d', '2h'].includes(x))) throw new HttpError(400, 'Choose when to send reminders');
+    return ['1w', '1d', '2h'].filter((x) => list.includes(x)).join(',');
+  },
 };
 
 // What staff need for billing and receipts; everything else is owner-only.
 const STAFF_VISIBLE = ['business_name', 'business_address', 'business_phone', 'business_email', 'business_website', 'business_logo', 'currency',
-  'tax_name', 'tax_rate_bp', 'prices_include_tax', 'receipt_footer', 'staff_can_discount', 'staff_can_custom_charge', 'timezone', 'tax_number', 'receipt_show_tax_number'];
+  'tax_name', 'tax_rate_bp', 'prices_include_tax', 'receipt_footer', 'staff_can_discount', 'staff_can_custom_charge', 'timezone', 'tax_number', 'receipt_show_tax_number',
+  'appt_default_minutes', 'appt_confirm_email'];
 
 module.exports = function settingsRoutes(api, ctx) {
   const owner = requirePerm('settings.manage');
@@ -82,6 +120,7 @@ module.exports = function settingsRoutes(api, ctx) {
     delete all.drive_folders;
     const out = can(req.user, 'settings.manage') ? all : Object.fromEntries(STAFF_VISIBLE.map((k) => [k, all[k]]));
     out.email_configured = ctx.mailer.configured() ? '1' : '0';
+    out.calendar_connected = ctx.calendar.isConnected() ? '1' : '0';
     res.json(out);
   });
 

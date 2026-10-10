@@ -3,6 +3,7 @@
 const path = require('path');
 const https = require('https');
 const { createApp } = require('./app');
+const { createPublicApp } = require('./public-app');
 const { ensureCertificates, localNames } = require('./lib/tls');
 
 const port = Number(process.env.PORT || 3000);
@@ -39,6 +40,15 @@ if (secure) {
   servers.push(s.listen(httpsPort, host));
 }
 
+// The customer page (confirm / cancel / change a booking) has its own port on
+// this computer only. A tunnel such as Cloudflare Tunnel points here, so the
+// internet can reach these pages and nothing else in the app.
+const publicPort = Number(process.env.PUBLIC_PORT || 3080);
+const publicServer = createPublicApp(app.locals.ctx).listen(publicPort, '127.0.0.1', () => {
+  console.log(`  Customer booking page (for the tunnel only): http://127.0.0.1:${publicPort}\n`);
+});
+publicServer.on('error', (e) => console.warn(`  Customer booking page is off: ${e.message}`));
+servers.push(publicServer);
 
 function shutdown() {
   let open = servers.length;

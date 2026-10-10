@@ -308,4 +308,44 @@ CREATE UNIQUE INDEX customers_client_ref ON customers(client_ref) WHERE client_r
 CREATE UNIQUE INDEX visits_client_ref ON visits(client_ref) WHERE client_ref IS NOT NULL;
 `,
   },
+  {
+    id: 3,
+    name: 'appointments calendar sync',
+    // google_event_id/google_calendar_id point at the copy of the booking in the
+    // owner's Google Calendar. sync_status: pending | synced | failed (NULL when
+    // no calendar is connected). duration is kept so a reschedule keeps its length.
+    sql: `
+ALTER TABLE appointments ADD COLUMN duration_minutes INTEGER;
+ALTER TABLE appointments ADD COLUMN google_event_id TEXT;
+ALTER TABLE appointments ADD COLUMN google_calendar_id TEXT;
+ALTER TABLE appointments ADD COLUMN sync_status TEXT;
+ALTER TABLE appointments ADD COLUMN sync_error TEXT;
+ALTER TABLE appointments ADD COLUMN confirmation_sent_at TEXT;
+CREATE INDEX idx_appointments_sync ON appointments(sync_status) WHERE sync_status IN ('pending','failed');
+CREATE INDEX idx_appointment_services_appt ON appointment_services(appointment_id);
+CREATE INDEX idx_visits_appointment ON visits(appointment_id) WHERE appointment_id IS NOT NULL;
+`,
+  },
+  {
+    id: 4,
+    name: 'appointment blocks and reminder stages',
+    // appointment_blocks: times the owner has closed for online booking (a
+    // break, a holiday). reminders_sent lists the reminder emails already
+    // handled ("1w,1d,2h"); scheduled_at is when the current time was set, so
+    // a booking made inside a reminder's window doesn't get that reminder too.
+    sql: `
+CREATE TABLE appointment_blocks (
+  id INTEGER PRIMARY KEY,
+  start_at TEXT NOT NULL,
+  end_at TEXT NOT NULL,
+  reason TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_appointment_blocks_time ON appointment_blocks(start_at, end_at);
+ALTER TABLE appointments ADD COLUMN reminders_sent TEXT;
+ALTER TABLE appointments ADD COLUMN scheduled_at TEXT;
+UPDATE appointments SET reminders_sent = '1w,1d' WHERE reminder_sent_at IS NOT NULL;
+`,
+  },
 ];

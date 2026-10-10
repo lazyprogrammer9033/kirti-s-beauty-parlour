@@ -1,5 +1,7 @@
 'use strict';
 
+const { defaultLogo } = require('./brand');
+
 const PDFDocument = require('pdfkit');
 const { formatCad } = require('./money');
 
@@ -35,7 +37,7 @@ function receiptPdf(inv, biz) {
   const right = doc.page.width - 54;
   const width = right - left;
 
-  const logo = logoBuffer(biz.business_logo);
+  const logo = logoBuffer(biz.business_logo) || logoBuffer(defaultLogo());
   let y = 54;
   if (logo) {
     try {

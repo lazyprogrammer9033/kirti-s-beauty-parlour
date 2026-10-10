@@ -14,6 +14,7 @@ A simple, elegant salon management app for iPad and Mac: customer lookup by phon
 - **Reports** for sales (daily/weekly/monthly/yearly/custom), customers, services, payments, staff and customer spending, exportable to CSV and PDF.
 - **Services** you manage yourself (categories, prices, duration, taxable, on/off). Price changes never alter past receipts.
 - **Canadian tax** set in Settings (HST/GST rate, prices with or without tax). Each receipt keeps the tax it was charged. Amounts in CAD.
+- **Appointments**: book, reschedule, cancel and mark no-shows; a week view; start the visit straight from a booking. Bookings are copied to the Google Calendar you choose, and customers can get confirmation and reminder emails.
 - **Backups**: automatic hourly backup (or once a day), Backup Now, restore, and copies in your own Google Drive. **Export All Data** to Excel or CSV.
 - **Owner and staff logins** with permissions, and an audit log that cannot be edited.
 
@@ -78,7 +79,20 @@ Settings › **Backup & Data** walks you through it. In short:
 
 The app can only see the files it creates in your Drive, nothing else.
 
-### 5. Email receipts (optional)
+### 5. Appointments in Google Calendar (optional)
+
+Uses the same Google app as step 4.
+
+1. In the same Google Cloud project, enable the **Google Calendar API**. If the calendar is in a different Google account from the one used for Drive, add that account under **OAuth consent screen › Test users**.
+2. On the Mac at `http://localhost:3000`, open Settings › Appointments, enter the Google account, and press **Connect Google Calendar**. Allow access to calendar events.
+3. Pick which calendar bookings go into. Bookings made, moved or cancelled in the app are copied to it (changes made in Google Calendar are not copied back). If the internet is down, the app keeps the booking and copies it later.
+4. To change account or calendar later, use **Use a different Google account** or the calendar picker on the same page; upcoming bookings move across.
+
+Confirmation and reminder emails to customers go out from the mailbox set up in step 6. Reminders go out 1 week, 1 day and 2 hours before (each can be turned off in Settings › Appointments); a reminder is skipped when the booking was made inside its window.
+
+**Customer booking page (optional).** The app also serves a small customer-only site on `127.0.0.1:3080`: a "Book now" page (`/book`) and one page per booking (`/a/<signed link>`) where customers confirm, cancel or pick a new free time. Customers see a month calendar with the number of free times each day, up to a year ahead. **Block time** on the Appointments screen closes a break, a day off or a holiday for online booking. Point a tunnel at that port only, for example Tailscale Funnel (`tailscale funnel --bg 3080`, free, keeps the same address), then in Settings › Appointments › Customer booking page enter the https address and tick the options. Nothing else in the app is reachable through it.
+
+### 6. Email receipts (optional)
 
 Settings › **Email**. For Gmail: turn on 2-Step Verification, create an **App password** at <https://myaccount.google.com/apppasswords>, then enter `smtp.gmail.com`, port `587`, your Gmail address and the app password. Press **Send test**.
 
@@ -105,7 +119,7 @@ Environment variables: `PORT` (3000), `HTTPS_PORT` (3443), `HTTPS=0` (turn off t
 ```bash
 npm install
 npm start          # http://localhost:3000
-npm test           # API, money and Google Drive tests (node:test)
+npm test           # API, money, Google Drive and Calendar tests (node:test)
 ```
 
 Browser walkthrough at iPad and Mac sizes (needs Playwright installed globally; writes screenshots to `test-output/`):

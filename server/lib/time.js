@@ -34,4 +34,29 @@ function isValidYmd(s) {
   return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s + 'T00:00:00Z'));
 }
 
-module.exports = { nowIso, businessDate, localHour, addDays, startOfWeek, isValidYmd };
+// Milliseconds the zone is ahead of UTC at a given instant.
+function zoneOffset(ts, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(ts));
+  const get = (t) => Number(parts.find((p) => p.type === t).value);
+  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')) - Math.floor(ts / 1000) * 1000;
+}
+
+// The instant a wall-clock time (YYYY-MM-DD, HH:MM) happens in the salon's time zone.
+function zonedToUtc(ymd, hm, timeZone) {
+  const [y, mo, d] = ymd.split('-').map(Number);
+  const [hh, mm] = hm.split(':').map(Number);
+  const wall = Date.UTC(y, mo - 1, d, hh, mm);
+  let ts = wall - zoneOffset(wall, timeZone);
+  const second = zoneOffset(ts, timeZone);
+  if (wall - second !== ts) ts = wall - second;
+  return new Date(ts);
+}
+
+// Local HH:MM of an instant in the salon's time zone.
+function localTime(date, timeZone) {
+  return new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date instanceof Date ? date : new Date(date));
+}
+
+const isValidHm = (s) => typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
+
+module.exports = { nowIso, businessDate, localHour, addDays, startOfWeek, isValidYmd, zonedToUtc, localTime, isValidHm };

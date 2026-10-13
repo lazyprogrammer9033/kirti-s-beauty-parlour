@@ -104,6 +104,18 @@ export async function render(view) {
         stat('Visits this month', String(d.month.visits), null, 'calendar'),
         stat('New this month', String(d.month.newCustomers), null, 'userPlus'),
         stat('Returning this month', String(d.month.returningCustomers), null, 'repeat'))));
+    if (d.staffSales?.length) {
+      const visits = (n) => (n ? `${n} visit${n === 1 ? '' : 's'}` : '');
+      blocks.push(h('section.card',
+        h('div.card-head', h('h3', 'Sales by staff'), h('a.link', { href: '#/reports/staff' }, 'Staff report ', icon('chevronRight', 16))),
+        h('div.table-scroll', h('table.table',
+          h('thead', h('tr', h('th', 'Staff member'), h('th.num', 'Today'), h('th.num.hide-sm', 'This week'), h('th.num', 'This month'))),
+          h('tbody', d.staffSales.map((s) => h('tr',
+            h('td', h('strong', s.name)),
+            h('td.num', money(s.todayCents), h('div.muted.small', visits(s.todayVisits))),
+            h('td.num.hide-sm', money(s.weekCents)),
+            h('td.num', money(s.monthCents), h('div.muted.small', visits(s.monthVisits))))))))));
+    }
     blocks.push(h('div.grid-dash',
       h('section.card',
         h('div.card-head', h('h3', 'Sales — last 30 days'), h('a.link', { href: '#/reports/sales' }, 'Reports ', icon('chevronRight', 16))),

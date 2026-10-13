@@ -143,24 +143,45 @@ function paymentReport(db, { from, to }) {
   };
 }
 
+// Sales credited to whoever served each line: the staff picked for that
+// service, otherwise the visit's "Served by". Custom charges have no
+// per-line staff, so they go to the visit's staff. Totals include tax so
+// they add up to the dashboard's sales figures; voided bills are left out.
+function staffSales(db, from, to) {
+  return db.prepare(`SELECT s.staffId, COALESCE(u.display_name, 'Unassigned') AS staff,
+      COUNT(DISTINCT s.visitId) AS visits, SUM(s.services) AS services,
+      SUM(s.net) AS revenue, SUM(s.total) AS sales
+    FROM (SELECT COALESCE(vs.staff_user_id, v.staff_user_id) AS staffId, v.id AS visitId,
+        CASE WHEN ii.item_type = 'service' THEN ii.quantity ELSE 0 END AS services,
+        ii.line_subtotal_cents - ii.discount_cents AS net, ii.line_total_cents AS total
+      FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id JOIN visits v ON v.id = i.visit_id
+      LEFT JOIN visit_services vs ON vs.id = ii.visit_service_id
+      WHERE ${VALID} AND i.business_date BETWEEN ? AND ?) s
+    LEFT JOIN users u ON u.id = s.staffId
+    GROUP BY s.staffId ORDER BY sales DESC, staff`).all(from, to);
+}
+
 function staffReport(db, { from, to }) {
-  const rows = db.prepare(`SELECT COALESCE(u.display_name, 'Unassigned') AS staff,
-      COUNT(DISTINCT v.id) AS visits, SUM(vs.quantity) AS services,
-      SUM(ii.line_subtotal_cents - ii.discount_cents) AS revenue
-    FROM visit_services vs JOIN visits v ON v.id = vs.visit_id JOIN invoice_items ii ON ii.visit_service_id = vs.id
-    LEFT JOIN users u ON u.id = vs.staff_user_id
-    WHERE v.status = 'completed' AND v.business_date BETWEEN ? AND ? GROUP BY vs.staff_user_id ORDER BY revenue DESC`).all(from, to);
+  const rows = staffSales(db, from, to);
+  const total = rows.reduce((sum, r) => sum + r.sales, 0);
+  rows.forEach((r) => (r.share = total ? r.sales / total : 0));
   return {
     title: 'Staff Report',
-    summary: [{ label: 'Staff members with sales', value: rows.length, type: 'int' }],
+    summary: [
+      { label: 'Total sales', value: total, type: 'money' },
+      { label: 'Staff members with sales', value: rows.length, type: 'int' },
+      { label: 'Top seller', value: rows[0]?.staff || '—', type: 'text' },
+    ],
     columns: [
       { key: 'staff', label: 'Staff member', type: 'text' },
       { key: 'visits', label: 'Visits', type: 'int' },
       { key: 'services', label: 'Services performed', type: 'int' },
-      { key: 'revenue', label: 'Service revenue', type: 'money' },
+      { key: 'revenue', label: 'Sales before tax', type: 'money' },
+      { key: 'sales', label: 'Sales', type: 'money' },
+      { key: 'share', label: 'Share of sales', type: 'pct' },
     ],
     rows,
-    chart: { labelKey: 'staff', valueKey: 'revenue', type: 'money' },
+    chart: { labelKey: 'staff', valueKey: 'sales', type: 'money' },
   };
 }
 
@@ -203,4 +224,4 @@ const REPORTS = {
   spending: spendingReport,
 };
 
-module.exports = { REPORTS };
+module.exports = { REPORTS, staffSales };

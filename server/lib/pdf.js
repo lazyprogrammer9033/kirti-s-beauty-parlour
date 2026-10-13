@@ -137,51 +137,143 @@ function receiptPdf(inv, biz) {
   return toBuffer(doc);
 }
 
-// Renders a report ({ title, subtitle, summary, columns, rows }) as a table.
+// Renders a report ({ title, heading?, subject?, subtitle, summary, columns, rows, totals? })
+// in the same style as the invoice: plum header with the logo, summary tiles,
+// a striped table and a footer with page numbers.
 function reportPdf(report, biz) {
-  const doc = new PDFDocument({ size: 'LETTER', layout: report.columns.length > 5 ? 'landscape' : 'portrait', margin: 40, info: { Title: report.title } });
-  const left = 40;
-  const right = doc.page.width - 40;
+  const landscape = report.columns.length > 5;
+  const doc = new PDFDocument({ size: 'LETTER', layout: landscape ? 'landscape' : 'portrait', margin: 0, bufferPages: true, info: { Title: report.title, Author: biz.business_name } });
+  const W = doc.page.width;
+  const H = doc.page.height;
+  const left = 44;
+  const right = W - 44;
   const width = right - left;
-  doc.fillColor(PLUM).font('Helvetica-Bold').fontSize(16).text(biz.business_name || 'Beauty Parlour', left, 40);
-  doc.fontSize(13).fillColor(ROSE).text(report.title);
-  doc.font('Helvetica').fontSize(9.5).fillColor(MUTED).text(report.subtitle || '');
-  doc.text(`Generated ${new Date().toLocaleString('en-CA', { timeZone: biz.timezone })}`);
-  doc.moveDown(0.8);
+  const name = biz.business_name || 'Beauty Parlour';
+  const pad = 8;
 
-  if (report.summary && report.summary.length) {
-    doc.fontSize(10);
-    for (const s of report.summary) {
-      doc.fillColor(MUTED).text(s.label + ': ', { continued: true }).fillColor(PLUM).font('Helvetica-Bold').text(formatValue(s.value, s.type)).font('Helvetica');
+  // Header band: logo, salon name and contact; report heading on the right.
+  const bandH = 104;
+  doc.rect(0, 0, W, bandH).fill(PLUM);
+  const logo = logoBuffer(biz.business_logo) || logoBuffer(defaultLogo());
+  const logoSize = 56;
+  const ly = (bandH - logoSize) / 2;
+  let hasLogo = false;
+  if (logo) {
+    try {
+      doc.roundedRect(left, ly, logoSize, logoSize, 12).fill('#ffffff');
+      doc.image(logo, left + 4, ly + 4, { fit: [logoSize - 8, logoSize - 8] });
+      hasLogo = true;
+    } catch {
+      /* unsupported image: skip */
     }
-    doc.moveDown(0.8);
+  }
+  const tx = hasLogo ? left + logoSize + 14 : left;
+  const headRightW = Math.min(300, width * 0.42);
+  const headW = right - tx - headRightW - 12;
+  const contact = [[biz.business_phone, biz.business_email].filter(Boolean).join('  ·  '), biz.business_website].filter(Boolean).join('\n');
+  const nameH = doc.font('Helvetica-Bold').fontSize(19).heightOfString(name, { width: headW });
+  const contactH = contact ? doc.font('Helvetica').fontSize(8.5).heightOfString(contact, { width: headW }) + 4 : 0;
+  const ty = (bandH - nameH - contactH) / 2;
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(19).text(name, tx, ty, { width: headW });
+  if (contact) doc.font('Helvetica').fontSize(8.5).fillColor('#f1d3dc').text(contact, tx, doc.y + 4, { width: headW, lineGap: 1 });
+
+  const heading = (report.heading || report.title).toUpperCase();
+  const hx = right - headRightW;
+  const headingH = doc.font('Helvetica-Bold').fontSize(18).heightOfString(heading, { width: headRightW, characterSpacing: 1.5 });
+  const subLines = [report.subject, report.subtitle].filter(Boolean);
+  const subH = subLines.length ? doc.font('Helvetica').fontSize(10).heightOfString(subLines.join('\n'), { width: headRightW }) + 4 : 0;
+  const hy = (bandH - headingH - subH) / 2;
+  doc.font('Helvetica-Bold').fontSize(18).fillColor('#ffffff').text(heading, hx, hy, { width: headRightW, align: 'right', characterSpacing: 1.5 });
+  if (subLines.length) {
+    let sy = doc.y + 4;
+    if (report.subject) {
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#ffffff').text(report.subject, hx, sy, { width: headRightW, align: 'right' });
+      sy = doc.y + 1;
+    }
+    if (report.subtitle) doc.font('Helvetica').fontSize(9.5).fillColor('#f1d3dc').text(report.subtitle, hx, sy, { width: headRightW, align: 'right' });
   }
 
-  const n = report.columns.length;
-  const colW = width / n;
+  let y = bandH + 22;
+
+  // Summary tiles, up to four per row.
+  const summary = report.summary || [];
+  if (summary.length) {
+    const perRow = Math.min(4, summary.length);
+    const gap = 12;
+    const tileW = (width - gap * (perRow - 1)) / perRow;
+    const tileH = 52;
+    summary.forEach((s, i) => {
+      const col = i % perRow;
+      const row = Math.floor(i / perRow);
+      const x = left + col * (tileW + gap);
+      const ty2 = y + row * (tileH + gap);
+      doc.roundedRect(x, ty2, tileW, tileH, 8).fill('#fbf6f8');
+      doc.roundedRect(x, ty2, 3, tileH, 1.5).fill(ROSE);
+      doc.font('Helvetica-Bold').fontSize(7.5).fillColor(ROSE).text(s.label.toUpperCase(), x + 14, ty2 + 11, { width: tileW - 24, characterSpacing: 0.8, lineBreak: false, ellipsis: true });
+      doc.font('Helvetica-Bold').fontSize(15).fillColor(PLUM).text(formatValue(s.value, s.type) || '—', x + 14, ty2 + 26, { width: tileW - 24, lineBreak: false, ellipsis: true });
+    });
+    y += Math.ceil(summary.length / perRow) * (tileH + gap) + 10;
+  }
+
+  // Table: text columns get more room than numbers.
+  const weight = (c) => (c.type === 'text' ? 2 : c.type === 'int' ? 0.8 : 1.2);
+  const total = report.columns.reduce((sum, c) => sum + weight(c), 0);
+  let cx = left;
+  const cols = report.columns.map((c) => {
+    const w = (width * weight(c)) / total;
+    const col = { ...c, x: cx, w, align: isNumeric(c.type) ? 'right' : 'left' };
+    cx += w;
+    return col;
+  });
+  const footerTop = H - 40;
   const drawHeader = () => {
-    const y = doc.y;
-    doc.rect(left, y, width, 20).fill('#f8f1f3');
-    doc.fillColor(PLUM).font('Helvetica-Bold').fontSize(8.5);
-    report.columns.forEach((c, i) => doc.text(c.label, left + i * colW + 4, y + 6, { width: colW - 8, align: isNumeric(c.type) ? 'right' : 'left' }));
-    doc.font('Helvetica').fontSize(8.5);
-    doc.y = y + 24;
+    doc.rect(left, y, width, 24).fill(PLUM);
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(8);
+    cols.forEach((c) => doc.text(c.label.toUpperCase(), c.x + pad, y + 8.5, { width: c.w - pad * 2, align: c.align, characterSpacing: 0.6, lineBreak: false, ellipsis: true }));
+    y += 24;
   };
   drawHeader();
-  for (const r of report.rows) {
-    if (doc.y > doc.page.height - 60) {
-      doc.addPage();
-      doc.y = 40;
+  const rowH = 22;
+  report.rows.forEach((r, i) => {
+    if (y + rowH > footerTop - 10) {
+      doc.addPage({ size: 'LETTER', layout: landscape ? 'landscape' : 'portrait', margin: 0 });
+      y = 44;
       drawHeader();
     }
-    const y = doc.y;
-    report.columns.forEach((c, i) => {
-      doc.fillColor(PLUM).text(formatValue(r[c.key], c.type), left + i * colW + 4, y, { width: colW - 8, align: isNumeric(c.type) ? 'right' : 'left', lineBreak: false, ellipsis: true });
+    if (i % 2 === 1) doc.rect(left, y, width, rowH).fill('#fbf6f8');
+    doc.fillColor(PLUM).font('Helvetica').fontSize(9);
+    cols.forEach((c) => doc.text(formatValue(r[c.key], c.type), c.x + pad, y + 7, { width: c.w - pad * 2, align: c.align, lineBreak: false, ellipsis: true }));
+    y += rowH;
+  });
+  if (!report.rows.length) {
+    doc.font('Helvetica').fontSize(10).fillColor(MUTED).text('No data for this period.', left + pad, y + 12);
+    y += 34;
+  } else if (report.totals) {
+    if (y + 26 > footerTop - 10) {
+      doc.addPage({ size: 'LETTER', layout: landscape ? 'landscape' : 'portrait', margin: 0 });
+      y = 44;
+    }
+    doc.moveTo(left, y).lineTo(right, y).strokeColor(PLUM).lineWidth(1).stroke();
+    doc.font('Helvetica-Bold').fontSize(9.5).fillColor(PLUM);
+    cols.forEach((c, i) => {
+      const v = i === 0 ? 'Total' : report.totals[c.key] != null ? formatValue(report.totals[c.key], c.type) : '';
+      doc.text(v, c.x + pad, y + 8, { width: c.w - pad * 2, align: c.align, lineBreak: false });
     });
-    doc.y = y + 15;
-    doc.moveTo(left, doc.y - 2).lineTo(right, doc.y - 2).strokeColor(LINE).lineWidth(0.5).stroke();
+    y += 26;
+  } else {
+    doc.moveTo(left, y).lineTo(right, y).strokeColor(LINE).lineWidth(1).stroke();
   }
-  if (!report.rows.length) doc.fillColor(MUTED).text('No data for this period.', left, doc.y + 6);
+
+  // Footer on every page.
+  const generated = `Generated ${new Date().toLocaleString('en-CA', { timeZone: biz.timezone, dateStyle: 'long', timeStyle: 'short' })}`;
+  const range = doc.bufferedPageRange();
+  for (let p = range.start; p < range.start + range.count; p++) {
+    doc.switchToPage(p);
+    doc.moveTo(left, footerTop).lineTo(right, footerTop).strokeColor(LINE).lineWidth(0.75).stroke();
+    doc.font('Helvetica').fontSize(8).fillColor(MUTED);
+    doc.text(`${name}  ·  ${generated}`, left, footerTop + 10, { width: width * 0.7, lineBreak: false });
+    doc.text(`Page ${p - range.start + 1} of ${range.count}`, left + width * 0.7, footerTop + 10, { width: width * 0.3, align: 'right', lineBreak: false });
+  }
   return toBuffer(doc);
 }
 

@@ -6,6 +6,8 @@ const { reportPdf, formatValue } = require('../lib/pdf');
 const { businessDate, isValidYmd, addDays } = require('../lib/time');
 const { audit } = require('../lib/audit');
 
+const niceDate = (ymd) => new Date(ymd + 'T12:00:00Z').toLocaleDateString('en-CA', { timeZone: 'UTC', dateStyle: 'medium' });
+
 function runReport(ctx, type, query) {
   const fn = REPORTS[type];
   if (!fn) throw new HttpError(404, 'Unknown report');
@@ -16,7 +18,7 @@ function runReport(ctx, type, query) {
   const report = fn(ctx.db(), { from, to, group: query.group, staff: query.staff });
   report.from = from;
   report.to = to;
-  report.subtitle = `${from} to ${to}`;
+  report.subtitle = `${niceDate(from)} to ${niceDate(to)}`;
   return report;
 }
 

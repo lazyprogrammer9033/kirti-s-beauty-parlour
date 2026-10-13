@@ -159,8 +159,20 @@ class BackupService {
     return record;
   }
 
+  // Copies the brand-assets folder (next to the data folder) to Google Drive, at most hourly.
+  async syncBrandAssets(force = false) {
+    if (!this.ctx.drive.isConnected()) return null;
+    if (!force && this.lastBrandSync && Date.now() - this.lastBrandSync < 60 * 60 * 1000) return null;
+    this.lastBrandSync = Date.now();
+    const dir = process.env.BRAND_DIR || path.join(path.dirname(this.ctx.dataDir), 'brand-assets');
+    return this.ctx.drive.syncFolder(dir);
+  }
+
   startScheduler() {
-    const tick = () => this.maybeRunScheduled().catch((e) => console.error('Automatic backup failed:', e.message));
+    const tick = () => {
+      this.maybeRunScheduled().catch((e) => console.error('Automatic backup failed:', e.message));
+      this.syncBrandAssets().catch((e) => console.error('Brand files backup failed:', e.message));
+    };
     this.timer = setInterval(tick, 10 * 60 * 1000);
     this.timer.unref();
     setTimeout(tick, 30 * 1000).unref();

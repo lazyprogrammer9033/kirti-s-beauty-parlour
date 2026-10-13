@@ -48,9 +48,16 @@ function fakeGoogle() {
       files.set(id, { id, ...meta, createdTime: new Date().toISOString() });
       return json({}, 200, { location: 'https://g.test/session/' + id });
     }
+    if (u.pathname.startsWith('/upload/files/') && opts.method === 'PATCH') {
+      const id = u.pathname.split('/').pop();
+      files.get(id).content = Buffer.from(opts.body);
+      files.get(id).md5Checksum = require('crypto').createHash('md5').update(files.get(id).content).digest('hex');
+      return json({ id });
+    }
     if (u.pathname.startsWith('/session/')) {
       const id = u.pathname.split('/').pop();
       files.get(id).content = Buffer.from(opts.body);
+      files.get(id).md5Checksum = require('crypto').createHash('md5').update(files.get(id).content).digest('hex');
       files.get(id).size = String(opts.body.length);
       return json({ id, name: files.get(id).name });
     }
@@ -83,7 +90,7 @@ test('connect Google Drive, back up into Beauty Parlour/Backups, and restore fro
   assert.equal(status.connected, true);
   assert.equal(status.account, 'owner@gmail.com');
   const names = [...g.files.values()].map((f) => f.name).sort();
-  assert.deepEqual(names, ['Backups', 'Beauty Parlour', 'Exports', 'Receipts', 'Reports']);
+  assert.deepEqual(names, ['Backups', 'Beauty Parlour', 'Brand', 'Exports', 'Receipts', 'Reports']);
 
   // Secrets are encrypted at rest and never returned to the browser.
   const raw = t.ctx.db().prepare("SELECT value FROM business_settings WHERE key = 'drive_refresh_token'").get().value;
@@ -127,4 +134,32 @@ test('a forged Drive callback without a valid state is rejected', async () => {
   await owner.post('/api/auth/login', { username: 'kirti', password: 'Secret-pass-1' });
   const cb = await owner.get('/api/drive/callback?state=forged&code=abc');
   assert.match(cb.headers.get('location'), /drive=error/);
+});
+
+test('brand files are copied to Beauty Parlour/Brand, with sub-folders, and only changes are re-sent', async () => {
+  const g = fakeGoogle();
+  const s = await startApp({ google: g.options });
+  try {
+    const owner = await setupOwner(s);
+    await owner.post('/api/drive/credentials', { clientId: '123-abc.apps.googleusercontent.com', clientSecret: 's3cret' });
+    const state = new URL((await owner.post('/api/drive/connect')).data.url).searchParams.get('state');
+    assert.equal((await owner.get(`/api/drive/callback?state=${state}&code=abc`)).status, 302);
+    const fs = require('fs');
+    const path = require('path');
+    const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'brand-'));
+    fs.writeFileSync(path.join(dir, 'logo.png'), 'png-1');
+    fs.mkdirSync(path.join(dir, 'business-cards'));
+    fs.writeFileSync(path.join(dir, 'business-cards', 'front.pdf'), 'pdf-1');
+    assert.deepEqual(await s.ctx.drive.syncFolder(dir), { uploaded: 2, updated: 0 });
+    const brand = [...g.files.values()].find((f) => f.name === 'Brand');
+    const cards = [...g.files.values()].find((f) => f.name === 'business-cards');
+    assert.equal(cards.parents[0], brand.id);
+    assert.ok([...g.files.values()].some((f) => f.name === 'front.pdf' && f.parents[0] === cards.id));
+    assert.deepEqual(await s.ctx.drive.syncFolder(dir), { uploaded: 0, updated: 0 });
+    fs.writeFileSync(path.join(dir, 'logo.png'), 'png-2');
+    assert.deepEqual(await s.ctx.drive.syncFolder(dir), { uploaded: 0, updated: 1 });
+    assert.equal(String([...g.files.values()].find((f) => f.name === 'logo.png').content), 'png-2');
+  } finally {
+    s.close();
+  }
 });

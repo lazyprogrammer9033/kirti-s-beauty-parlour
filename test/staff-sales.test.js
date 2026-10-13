@@ -65,3 +65,19 @@ test('staff do not see anyone’s sales', async () => {
   assert.equal(d.staffSales, undefined);
   assert.equal((await staff.get('/api/reports/staff')).status, 403);
 });
+
+test('owner can download one staff member’s sales statement; staff cannot', async () => {
+  const r = (await owner.get(`/api/reports/staff?staff=${ids.meera}`)).data;
+  assert.equal(r.title, 'Sales Statement: Meera');
+  assert.equal(r.summary[0].value, 6215);
+  assert.deepEqual(r.rows.map((x) => [x.service, x.sales]), [['Haircut', 5085], ['Hair spa add-on', 1130]]);
+  assert.ok(r.rows.every((x) => x.customer === 'Asha Rao'));
+  const pdf = await owner.get(`/api/reports/staff?staff=${ids.meera}&format=pdf`);
+  assert.equal(pdf.data.subarray(0, 4).toString(), '%PDF');
+  assert.match(pdf.headers.get('content-disposition'), /meera-sales-statement_/);
+  const csv = await owner.get(`/api/reports/staff?staff=${ids.meera}&format=csv`);
+  assert.ok(csv.data.toString().includes('Hair spa add-on'));
+  assert.equal((await staff.get(`/api/reports/staff?staff=${ids.meera}&format=pdf`)).status, 403);
+  const all = (await owner.get('/api/reports/staff?staff=999')).data;
+  assert.equal(all.title, 'Staff Report');
+});

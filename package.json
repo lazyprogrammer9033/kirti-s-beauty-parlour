@@ -1,0 +1,31 @@
+{
+  "name": "salon-manager",
+  "version": "1.0.0",
+  "description": "Salon management system for Kirti's Beauty Parlour: customers, check-in, billing, receipts, reports and backups.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test test/*.test.js",
+    "screenshots": "node scripts/screenshots.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lazyprogrammer9033/kirti-s-beauty-parlour.git"
+  },
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/lazyprogrammer9033/kirti-s-beauty-parlour/issues"
+  },
+  "homepage": "https://github.com/lazyprogrammer9033/kirti-s-beauty-parlour#readme",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "nodemailer": "^10.0.16",
+    "pdfkit": "^0.20.2"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}

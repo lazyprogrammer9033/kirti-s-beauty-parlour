@@ -30,6 +30,14 @@ export async function render(view, { params, query }) {
 }
 
 // Generic settings form: fields bound to setting keys, saved together.
+// Backup retention choices; 0 = forever. Keeps any custom number already saved.
+function keepOptions(current) {
+  const opts = [[0, 'Forever'], [30, '30 days'], [90, '90 days'], [180, '6 months'], [365, '1 year'], [730, '2 years']];
+  const cur = Number(current);
+  if (Number.isInteger(cur) && !opts.some(([v]) => v === cur)) opts.push([cur, `${cur} days`]);
+  return opts;
+}
+
 function settingsForm(container, s, rows, { title, intro } = {}) {
   const inputs = {};
   const make = (key, opts = {}) => {
@@ -217,7 +225,7 @@ async function backup(body, { query, rerender }) {
     h('div.grid-2',
       field('How often', f('backup_frequency', { type: 'select', options: [['hourly', 'Every hour'], ['daily', 'Once a day']] }), 'Hourly backups are skipped when nothing has changed.'),
       field('Daily backup after', f('backup_hour', { type: 'select', options: Array.from({ length: 24 }, (_, i) => [i, `${String(i).padStart(2, '0')}:00`]) }), 'Only used for once-a-day backups.')),
-    field('Days of backups to keep', f('backup_keep_local', { inputmode: 'numeric' }), 'Every backup from the last 2 days is kept, then one per day. Older automatic backups are removed here and from Google Drive.'),
+    field('Keep backups for', f('backup_keep_local', { type: 'select', options: keepOptions(s.backup_keep_local) }), 'Every backup from the last 2 days is kept, then one per day. With a time limit, older automatic backups are removed here and from Google Drive.'),
   ], { title: 'Automatic backups' });
 
   // Export

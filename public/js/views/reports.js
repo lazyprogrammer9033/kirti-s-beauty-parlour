@@ -45,7 +45,7 @@ export async function render(view, { params }) {
   if (!session.can('reports.view')) return navigate('dashboard');
   const type = TABS.some(([k]) => k === params[0]) ? params[0] : 'sales';
   const P = presets();
-  const state = { preset: 'month', from: P[2][2], to: P[2][3], group: 'day' };
+  const state = { preset: 'month', from: P[2][2], to: P[2][3], group: 'day', staff: '' };
   const out = h('div.stack');
   const fromEl = h('input.input.sm', { type: 'date', value: state.from, 'aria-label': 'From' });
   const toEl = h('input.input.sm', { type: 'date', value: state.to, 'aria-label': 'To' });
@@ -71,7 +71,16 @@ export async function render(view, { params }) {
     ? h('select.input.sm', { 'aria-label': 'Group by', onchange: (e) => { state.group = e.target.value; load(); } }, [['day', 'Daily'], ['week', 'Weekly'], ['month', 'Monthly'], ['year', 'Yearly']].map(([v, l]) => h('option', { value: v }, l)))
     : null;
 
-  const qs = () => new URLSearchParams({ from: state.from, to: state.to, group: state.group }).toString();
+  // On the Staff tab, picking one person turns the report into their sales
+  // statement, which the owner can download as a PDF and share with them.
+  const users = type === 'staff' ? await api.get('/users').catch(() => []) : [];
+  const staffSel = type === 'staff'
+    ? h('select.input.sm', { 'aria-label': 'Staff member', onchange: (e) => { state.staff = e.target.value; load(); } },
+        h('option', { value: '' }, 'Everyone'),
+        users.map((u) => h('option', { value: String(u.id) }, u.displayName + (u.active ? '' : ' (inactive)'))))
+    : null;
+
+  const qs = () => new URLSearchParams({ from: state.from, to: state.to, group: state.group, ...(state.staff ? { staff: state.staff } : {}) }).toString();
 
   async function load() {
     clear(out, spinner());
@@ -84,6 +93,7 @@ export async function render(view, { params }) {
     const chartData = r.chart ? r.rows.slice(0, r.chart.limit || 40).map((row) => ({ label: row[r.chart.labelKey], value: row[r.chart.valueKey] || 0 })) : [];
     clear(out,
       h('div.stat-grid.compact', r.summary.map((s) => h('div.stat-card', h('div.stat-label', s.label), h('div.stat-value.sm', fmt(s.value, s.type))))),
+      state.staff && r.rows.length ? h('p.muted.small', 'Use PDF to download this statement and share it with them.') : null,
       chartData.length && chartData.some((d) => d.value)
         ? h('section.card', barChart(chartData, { format: (v) => fmt(v, r.chart.type), labelEvery: Math.ceil(chartData.length / 12) }))
         : null,
@@ -103,7 +113,7 @@ export async function render(view, { params }) {
         ? h('button.btn.ghost', { type: 'button', onclick: async (e) => {
             e.currentTarget.disabled = true;
             try {
-              await api.post(`/reports/${type}/drive`, { from: state.from, to: state.to, group: state.group });
+              await api.post(`/reports/${type}/drive`, { from: state.from, to: state.to, group: state.group, staff: state.staff });
               toast('Saved to Google Drive › Reports');
             } catch (ex) {
               toast(ex.message, 'error');
@@ -112,7 +122,7 @@ export async function render(view, { params }) {
           } }, icon('cloud', 18), 'Save to Drive')
         : null),
     h('div.tabs', TABS.map(([k, l]) => h('a.tab' + (k === type ? '.on' : ''), { href: '#/reports/' + k }, l))),
-    h('div.toolbar', presetChips, h('div.toolbar-right', fromEl, h('span.muted', 'to'), toEl, groupSel)),
+    h('div.toolbar', presetChips, h('div.toolbar-right', staffSel, fromEl, h('span.muted', 'to'), toEl, groupSel)),
     out);
   await load();
 }

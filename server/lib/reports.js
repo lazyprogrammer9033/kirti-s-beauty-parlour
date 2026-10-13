@@ -161,7 +161,46 @@ function staffSales(db, from, to) {
     GROUP BY s.staffId ORDER BY sales DESC, staff`).all(from, to);
 }
 
-function staffReport(db, { from, to }) {
+// One staff member's sales, line by line, for the owner to share with them.
+// Uses the same crediting rules as staffSales().
+function staffStatement(db, { from, to, staffId }) {
+  const user = db.prepare('SELECT id, display_name AS name FROM users WHERE id = ?').get(staffId);
+  if (!user) return null;
+  const rows = db.prepare(`SELECT i.business_date AS date, i.invoice_number AS invoice, c.full_name AS customer,
+      ii.description AS service, ii.quantity AS quantity, ii.line_subtotal_cents - ii.discount_cents AS revenue, ii.line_total_cents AS sales
+    FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id JOIN visits v ON v.id = i.visit_id JOIN customers c ON c.id = i.customer_id
+    LEFT JOIN visit_services vs ON vs.id = ii.visit_service_id
+    WHERE ${VALID} AND i.business_date BETWEEN ? AND ? AND COALESCE(vs.staff_user_id, v.staff_user_id) = ?
+    ORDER BY i.business_date, i.invoice_number, ii.id`).all(from, to, user.id);
+  const t = staffSales(db, from, to).find((r) => r.staffId === user.id) || { sales: 0, revenue: 0, visits: 0, services: 0 };
+  return {
+    title: `Sales Statement: ${user.name}`,
+    fileLabel: `${user.name} sales statement`,
+    summary: [
+      { label: 'Total sales', value: t.sales, type: 'money' },
+      { label: 'Sales before tax', value: t.revenue, type: 'money' },
+      { label: 'Visits', value: t.visits, type: 'int' },
+      { label: 'Services performed', value: t.services, type: 'int' },
+    ],
+    columns: [
+      { key: 'date', label: 'Date', type: 'text' },
+      { key: 'invoice', label: 'Bill', type: 'text' },
+      { key: 'customer', label: 'Customer', type: 'text' },
+      { key: 'service', label: 'Service', type: 'text' },
+      { key: 'quantity', label: 'Qty', type: 'int' },
+      { key: 'revenue', label: 'Before tax', type: 'money' },
+      { key: 'sales', label: 'Sales', type: 'money' },
+    ],
+    rows,
+  };
+}
+
+function staffReport(db, { from, to, staff }) {
+  const staffId = Number(staff);
+  if (Number.isInteger(staffId) && staffId > 0) {
+    const statement = staffStatement(db, { from, to, staffId });
+    if (statement) return statement;
+  }
   const rows = staffSales(db, from, to);
   const total = rows.reduce((sum, r) => sum + r.sales, 0);
   rows.forEach((r) => (r.share = total ? r.sales / total : 0));

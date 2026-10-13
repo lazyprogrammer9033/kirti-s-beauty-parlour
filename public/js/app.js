@@ -84,7 +84,21 @@ async function route() {
       if (name !== 'visit') return offlinePage(view);
     }
     console.error(e);
-    clear(view, h('div.card.error-card', h('h2', 'Something went wrong'), h('p', e.message || String(e)), h('button.btn', { onclick: () => route() }, 'Try again')));
+    // A page file failed to load (usually the salon computer restarting). Browsers
+    // remember that failure until a full reload, so reload once, then offer it.
+    const loadFailed = /dynamically imported module|Importing a module script failed|error loading dynamically/i.test(e.message || '');
+    if (loadFailed) {
+      let last = 0;
+      try { last = Number(sessionStorage.getItem('salon_reloaded_at') || 0); } catch { /* storage off */ }
+      if (Date.now() - last > 30000) {
+        try { sessionStorage.setItem('salon_reloaded_at', String(Date.now())); } catch { /* storage off */ }
+        clear(view, h('div.card.error-card', h('h2', 'Reconnecting…'), h('p', 'The salon computer was busy for a moment. Loading again.')));
+        setTimeout(() => location.reload(), 1500);
+        return;
+      }
+    }
+    clear(view, h('div.card.error-card', h('h2', 'Something went wrong'), h('p', loadFailed ? 'The salon app couldn’t load this page. Check the salon computer is on, then try again.' : e.message || String(e)),
+      h('button.btn', { onclick: () => (loadFailed ? location.reload() : route()) }, 'Try again')));
   }
 }
 

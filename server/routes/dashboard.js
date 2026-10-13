@@ -2,6 +2,23 @@
 
 const { can } = require('../lib/auth');
 const { businessDate, startOfWeek, addDays } = require('../lib/time');
+const { staffSales } = require('../lib/reports');
+
+// One row per staff member with today's, this week's and this month's sales.
+// Active staff with no sales yet still show, so the owner sees everyone.
+function staffSalesSummary(db, today, weekStart, monthStart) {
+  const rows = new Map();
+  const row = (id, name) => {
+    const key = id ?? 'none';
+    if (!rows.has(key)) rows.set(key, { userId: id, name, todayCents: 0, todayVisits: 0, weekCents: 0, monthCents: 0, monthVisits: 0 });
+    return rows.get(key);
+  };
+  for (const u of db.prepare('SELECT id, display_name AS name FROM users WHERE active = 1 ORDER BY id').all()) row(u.id, u.name);
+  for (const r of staffSales(db, monthStart, today)) Object.assign(row(r.staffId, r.staff), { monthCents: r.sales, monthVisits: r.visits });
+  for (const r of staffSales(db, weekStart, today)) row(r.staffId, r.staff).weekCents = r.sales;
+  for (const r of staffSales(db, today, today)) Object.assign(row(r.staffId, r.staff), { todayCents: r.sales, todayVisits: r.visits });
+  return [...rows.values()].sort((a, b) => b.monthCents - a.monthCents || b.todayCents - a.todayCents || a.name.localeCompare(b.name));
+}
 
 module.exports = function dashboardRoutes(api, ctx) {
   api.get('/dashboard', (req, res) => {
@@ -55,6 +72,7 @@ module.exports = function dashboardRoutes(api, ctx) {
         topCustomers: db.prepare(`SELECT c.id, c.full_name AS name, COUNT(*) AS visits, SUM(i.total_cents) AS spentCents
           FROM invoices i JOIN customers c ON c.id = i.customer_id WHERE i.status != 'void' GROUP BY c.id ORDER BY spentCents DESC LIMIT 5`).all(),
         totalCustomers: db.prepare('SELECT COUNT(*) c FROM customers').get().c,
+        staffSales: staffSalesSummary(db, today, startOfWeek(today), monthStart),
       });
     }
     res.json(out);

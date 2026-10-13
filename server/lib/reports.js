@@ -175,6 +175,8 @@ function staffStatement(db, { from, to, staffId }) {
   const t = staffSales(db, from, to).find((r) => r.staffId === user.id) || { sales: 0, revenue: 0, visits: 0, services: 0 };
   return {
     title: `Sales Statement: ${user.name}`,
+    heading: 'Sales Statement',
+    subject: user.name,
     fileLabel: `${user.name} sales statement`,
     summary: [
       { label: 'Total sales', value: t.sales, type: 'money' },
@@ -192,6 +194,7 @@ function staffStatement(db, { from, to, staffId }) {
       { key: 'sales', label: 'Sales', type: 'money' },
     ],
     rows,
+    totals: { quantity: rows.reduce((n, r) => n + r.quantity, 0), revenue: t.revenue, sales: t.sales },
   };
 }
 

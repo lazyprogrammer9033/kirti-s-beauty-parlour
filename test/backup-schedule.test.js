@@ -58,3 +58,31 @@ test('pruning keeps 48 hours of hourly backups, then one per day', async () => {
     await t.close();
   }
 });
+
+test('"Keep forever" keeps one backup per day with no age limit', async () => {
+  const t = await startApp();
+  try {
+    const { backups } = t.ctx;
+    const db = t.ctx.db();
+    t.ctx.settings.set('backup_keep_local', '0');
+    fs.mkdirSync(backups.dir, { recursive: true });
+    const ins = db.prepare("INSERT INTO backups (filename, kind, size_bytes, status, created_at, updated_at) VALUES (?, 'auto', 1, 'success', ?, ?)");
+    const names = [];
+    // Two backups a day, 5 hours apart, for 500 days.
+    for (let d = 500; d >= 0; d--) {
+      for (const hr of [10, 15]) {
+        const at = new Date(Date.now() - d * 86400000 - hr * 3600000).toISOString();
+        const name = `salon-backup-f${d}-${hr}-auto.db`;
+        fs.writeFileSync(path.join(backups.dir, name), 'x');
+        ins.run(name, at, at);
+        names.push(name);
+      }
+    }
+    await backups.prune();
+    const left = names.filter((n) => fs.existsSync(path.join(backups.dir, n)));
+    assert.ok(left.includes('salon-backup-f500-10-auto.db') || left.includes('salon-backup-f500-15-auto.db'), 'oldest day kept');
+    assert.ok(left.length >= 500 && left.length <= 506, `kept ${left.length}`);
+  } finally {
+    await t.close();
+  }
+});

@@ -100,12 +100,13 @@ class BackupService {
   }
 
   // Automatic backups: every one from the last 48 hours, then the newest of each
-  // day for backup_keep_local days. Older ones are removed from this computer
-  // and from Google Drive. Manual and pre-restore backups are only removed by the owner.
+  // day for backup_keep_local days (0 = forever). Older ones are removed from this
+  // computer and from Google Drive. Manual and pre-restore backups are only removed by the owner.
   async prune() {
     const db = this.ctx.db();
     const tz = this.ctx.settings.timezone();
-    const days = Math.max(Number(this.ctx.settings.get('backup_keep_local') || 30), 3);
+    const setting = Number(this.ctx.settings.get('backup_keep_local') ?? 30);
+    const days = setting === 0 ? Infinity : Math.max(setting || 30, 3);
     const now = Date.now();
     const autos = db.prepare("SELECT id, filename, drive_file_id AS driveFileId, created_at AS createdAt FROM backups WHERE kind = 'auto' AND status = 'success' ORDER BY id DESC").all();
     const seenDays = new Set();

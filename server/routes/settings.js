@@ -51,7 +51,8 @@ const EDITABLE = {
   },
   backup_keep_local: (v) => {
     const n = Number(v);
-    if (!Number.isInteger(n) || n < 3 || n > 365) throw new HttpError(400, 'Keep between 3 and 365 backups');
+    // 0 means keep one backup per day forever.
+    if (!Number.isInteger(n) || (n !== 0 && (n < 3 || n > 3650))) throw new HttpError(400, 'Keep backups for 3 to 3650 days, or forever');
     return String(n);
   },
   app_base_url: (v) => {

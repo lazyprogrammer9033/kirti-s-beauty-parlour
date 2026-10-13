@@ -466,8 +466,9 @@ a.list-row:hover { background: var(--surface-2); border-radius: 12px; }
 .receipt.is-void::after { content: 'VOID'; position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%) rotate(-18deg); font-size: 6rem; font-weight: 800; color: rgba(185, 67, 79, 0.12); pointer-events: none; }
 .receipt-head { display: flex; gap: 18px; align-items: flex-start; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
 .receipt-logo { width: 72px; height: 72px; object-fit: contain; border-radius: 12px; }
-.receipt-biz { flex: 1; color: var(--ink-2); font-size: 0.9rem; }
-.receipt-biz h2 { color: var(--ink); margin-bottom: 4px; }
+.receipt-biz { flex: 1; color: var(--ink-2); font-size: 0.9rem; min-height: 72px; display: flex; flex-direction: column; justify-content: center; } /* name centred beside the logo */
+.receipt-biz h2 { color: var(--ink); margin: 0 0 4px; }
+.receipt-biz h2:last-child { margin-bottom: 0; }
 .receipt-meta { text-align: right; font-size: 0.9rem; color: var(--ink-2); }
 .receipt-title { text-transform: uppercase; letter-spacing: 2px; color: var(--primary); font-weight: 700; }
 .receipt-to { display: flex; justify-content: space-between; gap: 12px; padding: 18px 0; }

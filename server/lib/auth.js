@@ -4,7 +4,9 @@ const crypto = require('crypto');
 const { sha256 } = require('./secrets');
 
 const COOKIE = 'salon_sid';
-const SESSION_DAYS = 14;
+// Sign-in lasts while the app is in use: the cookie ends when the browser
+// closes, and the session ends after this long without any activity.
+const IDLE_MINUTES = 30;
 
 const ROLE_PERMISSIONS = {
   owner: ['*'],
@@ -38,7 +40,7 @@ function parseCookies(header) {
 function createSession(db, userId) {
   const token = crypto.randomBytes(32).toString('base64url');
   const now = new Date();
-  const expires = new Date(now.getTime() + SESSION_DAYS * 86400000);
+  const expires = new Date(now.getTime() + IDLE_MINUTES * 60000);
   db.prepare('INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
     .run(sha256(token), userId, expires.toISOString(), now.toISOString());
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now.toISOString());
@@ -46,7 +48,8 @@ function createSession(db, userId) {
 }
 
 function sessionCookie(token, expires, secure) {
-  return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Expires=${expires.toUTCString()}${secure ? '; Secure' : ''}`;
+  // No Expires: a browser-session cookie, gone when the browser is closed.
+  return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
 }
 
 function clearCookie(secure) {
@@ -58,7 +61,16 @@ function loadUser(db, req) {
   if (!token) return null;
   const row = db.prepare(`SELECT u.id, u.username, u.display_name, u.active, r.code AS role, s.id AS sid, s.expires_at
     FROM sessions s JOIN users u ON u.id = s.user_id JOIN roles r ON r.id = u.role_id WHERE s.id = ?`).get(sha256(token));
-  if (!row || !row.active || row.expires_at < new Date().toISOString()) return null;
+  const now = new Date();
+  if (!row || !row.active || row.expires_at < now.toISOString()) return null;
+  // Each request pushes the idle cut-off back (at most once a minute).
+  const next = new Date(now.getTime() + IDLE_MINUTES * 60000);
+  // Older 14-day sign-ins (from before this rule) are ended so everyone signs in again once.
+  if (Date.parse(row.expires_at) > next.getTime() + 60000) {
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(row.sid);
+    return null;
+  }
+  if (Date.parse(row.expires_at) < next.getTime() - 60000) db.prepare('UPDATE sessions SET expires_at = ? WHERE id = ?').run(next.toISOString(), row.sid);
   return { id: row.id, username: row.username, displayName: row.display_name, role: row.role, sessionId: row.sid };
 }
 

@@ -60,8 +60,17 @@ test('staff report credits custom charges to the visit’s staff and skips voide
   assert.equal(r.summary[2].value, 'Kirti');
 });
 
-test('staff do not see anyone’s sales', async () => {
+test('staff do not see other people’s sales', async () => {
   const d = (await staff.get('/api/dashboard')).data;
   assert.equal(d.staffSales, undefined);
   assert.equal((await staff.get('/api/reports/staff')).status, 403);
+});
+
+test('each person sees only their own sales under "My sales"', async () => {
+  const mine = (await staff.get('/api/dashboard')).data.mySales;
+  assert.deepEqual(mine, { todayCents: 5085 + 1130, todayVisits: 1, weekCents: 5085 + 1130, monthCents: 5085 + 1130, monthVisits: 1 });
+  const anu = t.client();
+  await anu.post('/api/auth/login', { username: 'anu', password: 'staff-pass-2' });
+  assert.equal((await anu.get('/api/dashboard')).data.mySales.todayCents, 0);
+  assert.equal((await owner.get('/api/dashboard')).data.mySales.todayCents, 5085 * 2);
 });

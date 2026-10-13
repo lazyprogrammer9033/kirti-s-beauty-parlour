@@ -131,11 +131,23 @@ export async function render(view) {
           ? h('div.list', d.topCustomers.map((c, i) => h('a.list-row', { href: '#/customer/' + c.id }, h('span.rank', String(i + 1)), h('span.grow', c.name), h('span.muted.small', `${c.visits} visits`), h('strong', moneyShort(c.spentCents)))))
           : emptyState('heart', 'No customers yet', 'Your best customers will appear here.'))));
   } else {
-    blocks.push(h('div.stat-grid',
-      stat('Visits today', String(t.visits), null, 'sparkles', 'rose'),
-      stat('Customers today', String(t.customers), null, 'users'),
-      stat('New customers', String(t.newCustomers), null, 'userPlus'),
-      stat('Returning', String(t.returningCustomers), null, 'repeat')));
+    const m = d.mySales;
+    const visits = (n) => `${n} visit${n === 1 ? '' : 's'}`;
+    if (m) {
+      blocks.push(h('section',
+        h('h2.section-title', 'My sales'),
+        h('div.stat-grid',
+          stat('Today', money(m.todayCents), visits(m.todayVisits), 'dollar', 'rose'),
+          stat('This week', money(m.weekCents), null, 'chart'),
+          stat('This month', money(m.monthCents), visits(m.monthVisits), 'chart'))));
+    }
+    blocks.push(h('section',
+      h('h2.section-title', 'Salon today'),
+      h('div.stat-grid',
+        stat('Visits today', String(t.visits), null, 'sparkles', m ? '' : 'rose'),
+        stat('Customers today', String(t.customers), null, 'users'),
+        stat('New customers', String(t.newCustomers), null, 'userPlus'),
+        stat('Returning', String(t.returningCustomers), null, 'repeat'))));
   }
   blocks.push(h('section.card',
     h('div.card-head', h('h3', "Today's visits"), h('a.link', { href: '#/billing?range=today' }, 'All bills ', icon('chevronRight', 16))),

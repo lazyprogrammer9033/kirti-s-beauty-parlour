@@ -20,6 +20,15 @@ function staffSalesSummary(db, today, weekStart, monthStart) {
   return [...rows.values()].sort((a, b) => b.monthCents - a.monthCents || b.todayCents - a.todayCents || a.name.localeCompare(b.name));
 }
 
+// The signed-in person's own sales, so staff can see what they've earned
+// without seeing anyone else's figures.
+function mySales(db, userId, today) {
+  const sum = (from) => staffSales(db, from, today).find((r) => r.staffId === userId) || { sales: 0, visits: 0 };
+  const day = sum(today);
+  const month = sum(today.slice(0, 8) + '01');
+  return { todayCents: day.sales, todayVisits: day.visits, weekCents: sum(startOfWeek(today)).sales, monthCents: month.sales, monthVisits: month.visits };
+}
+
 module.exports = function dashboardRoutes(api, ctx) {
   api.get('/dashboard', (req, res) => {
     const db = ctx.db();
@@ -43,6 +52,7 @@ module.exports = function dashboardRoutes(api, ctx) {
       todayStats: { visits: t.visits, customers: t.customers, newCustomers: t.newCustomers, returningCustomers: t.customers - t.newCustomers },
       todayVisits,
       financials: false,
+      mySales: mySales(db, req.user.id, today),
     };
 
     if (can(req.user, 'reports.view')) {

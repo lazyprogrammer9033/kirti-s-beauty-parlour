@@ -9,20 +9,39 @@ function redirectUri(ctx, req) {
   return `${base}/api/drive/callback`;
 }
 
-// Google sends the owner's browser back here after they approve access.
+// Google sends the owner's browser back here after they approve access. The
+// calendar sign-in comes back here too, so only one redirect URI is registered.
 function publicRoutes(api, ctx) {
   api.get('/drive/callback', async (req, res) => {
+    const state = String(req.query.state || '');
+    if (ctx.calendar.hasState(state)) return calendarCallback(req, res, ctx, state);
     const back = (status, msg) => res.redirect(`/#/settings/backup?drive=${status}${msg ? '&message=' + encodeURIComponent(msg) : ''}`);
     if (!req.user || !can(req.user, 'backups.manage')) return back('error', 'Please sign in as the owner and try again.');
     if (req.query.error) return back('error', 'Google access was not granted.');
     try {
-      const out = await ctx.drive.completeAuth(String(req.query.state || ''), String(req.query.code || ''));
+      const out = await ctx.drive.completeAuth(state, String(req.query.code || ''));
       audit(ctx.db(), req, 'drive.connected', 'settings', 'drive', { account: out.email });
       back('connected');
     } catch (e) {
       back('error', e.message);
     }
   });
+}
+
+async function calendarCallback(req, res, ctx, state) {
+  const back = (status, msg) => res.redirect(`/#/settings/appointments?calendar=${status}${msg ? '&message=' + encodeURIComponent(msg) : ''}`);
+  if (!req.user || !can(req.user, 'settings.manage')) return back('error', 'Please sign in as the owner and try again.');
+  if (req.query.error) {
+    ctx.calendar.pendingStates.delete(state);
+    return back('error', 'Google Calendar access was not granted.');
+  }
+  try {
+    const out = await ctx.calendar.completeAuth(state, String(req.query.code || ''));
+    audit(ctx.db(), req, 'calendar.connected', 'settings', 'calendar', { account: out.email });
+    back('connected');
+  } catch (e) {
+    back('error', e.message);
+  }
 }
 
 function privateRoutes(api, ctx) {
@@ -54,4 +73,4 @@ function privateRoutes(api, ctx) {
   });
 }
 
-module.exports = { publicRoutes, privateRoutes };
+module.exports = { publicRoutes, privateRoutes, redirectUri };

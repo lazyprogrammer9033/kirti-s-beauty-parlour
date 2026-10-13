@@ -1,5 +1,7 @@
 'use strict';
 
+const { defaultLogo } = require('./brand');
+
 const PDFDocument = require('pdfkit');
 const { formatCad } = require('./money');
 
@@ -35,7 +37,7 @@ function receiptPdf(inv, biz) {
   const right = doc.page.width - 54;
   const width = right - left;
 
-  const logo = logoBuffer(biz.business_logo);
+  const logo = logoBuffer(biz.business_logo) || logoBuffer(defaultLogo());
   let y = 54;
   if (logo) {
     try {
@@ -45,10 +47,16 @@ function receiptPdf(inv, biz) {
     }
   }
   const tx = logo ? left + 84 : left;
-  doc.fillColor(PLUM).font('Helvetica-Bold').fontSize(20).text(biz.business_name || 'Beauty Parlour', tx, y, { width: right - tx - 160 });
-  doc.font('Helvetica').fontSize(9.5).fillColor(MUTED);
+  const headW = right - tx - 160;
+  const name = biz.business_name || 'Beauty Parlour';
   const contact = [biz.business_address, biz.business_phone, biz.business_email, biz.business_website].filter(Boolean).join('\n');
-  if (contact) doc.text(contact, tx, doc.y + 4, { width: right - tx - 160 });
+  // Centre the name (and contact lines) against the 70pt logo.
+  const nameH = doc.font('Helvetica-Bold').fontSize(20).heightOfString(name, { width: headW });
+  const contactH = contact ? doc.font('Helvetica').fontSize(9.5).heightOfString(contact, { width: headW }) + 4 : 0;
+  const ty = logo ? y + Math.max(0, (70 - nameH - contactH) / 2) : y;
+  doc.fillColor(PLUM).font('Helvetica-Bold').fontSize(20).text(name, tx, ty, { width: headW });
+  doc.font('Helvetica').fontSize(9.5).fillColor(MUTED);
+  if (contact) doc.text(contact, tx, doc.y + 4, { width: headW });
   if (biz.receipt_show_tax_number === '1' && biz.tax_number) doc.text(`${inv.taxName} #: ${biz.tax_number}`);
 
   doc.font('Helvetica-Bold').fontSize(11).fillColor(ROSE).text(inv.status === 'void' ? 'VOID RECEIPT' : 'RECEIPT', right - 160, y, { width: 160, align: 'right' });

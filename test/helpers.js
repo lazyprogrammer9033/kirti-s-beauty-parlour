@@ -56,6 +56,9 @@ class Client {
   put(u, b) {
     return this.req('PUT', u, b);
   }
+  del(u) {
+    return this.req('DELETE', u);
+  }
 }
 
 async function setupOwner(t) {

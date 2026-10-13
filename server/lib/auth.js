@@ -15,6 +15,8 @@ const ROLE_PERMISSIONS = {
     'invoices.view',
     'payments.record',
     'services.view',
+    'appointments.view',
+    'appointments.manage',
   ],
 };
 

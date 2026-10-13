@@ -7,6 +7,7 @@ const OWNER_TABS = [
   ['business', 'Business'],
   ['tax', 'Tax & Receipts'],
   ['backup', 'Backup & Data'],
+  ['appointments', 'Appointments'],
   ['users', 'Staff Accounts'],
   ['email', 'Email'],
   ['audit', 'Audit Log'],
@@ -24,7 +25,7 @@ export async function render(view, { params, query }) {
       owner ? h('a.btn.ghost', { href: '#/services' }, icon('scissors', 18), 'Manage services') : null),
     h('div.tabs', tabs.map(([k, l]) => h('a.tab' + (k === tab ? '.on' : ''), { href: '#/settings/' + k }, l))),
     body);
-  const renderers = { business, tax, backup, users, email, audit, account, ipad };
+  const renderers = { business, tax, backup, appointments, users, email, audit, account, ipad };
   await renderers[tab](body, { query, rerender: () => render(view, { params, query: new URLSearchParams() }) });
 }
 
@@ -363,6 +364,128 @@ async function users(body, { rerender }) {
       h('button.btn.ghost.sm', { type: 'button', onclick: () => userModal(u) }, icon('edit', 16), 'Edit'))))));
 }
 
+async function appointments(body, { query, rerender }) {
+  const [s, cal] = await Promise.all([api.get('/settings'), api.get('/calendar/status')]);
+  clear(body);
+  if (query.get('calendar') === 'connected') toast('Google Calendar connected');
+  if (query.get('calendar') === 'error') toast(query.get('message') || 'Google Calendar connection failed', 'error');
+
+  const connect = async (e) => {
+    e.currentTarget.disabled = true;
+    try {
+      const r = await api.post('/calendar/connect', { email: emailEl?.value || '' });
+      location.href = r.url;
+    } catch (ex) {
+      toast(ex.message, 'error');
+      e.currentTarget.disabled = false;
+    }
+  };
+  let emailEl = null;
+  const card = h('div.card.stack');
+  if (cal.connected) {
+    const picker = h('select.input', h('option', { value: cal.calendarId }, cal.calendarName || 'Main calendar'));
+    api.get('/calendar/calendars').then((list) => {
+      clear(picker, list.map((c) => h('option', { value: c.primary ? 'primary' : c.id, selected: (c.primary ? 'primary' : c.id) === cal.calendarId }, c.name + (c.primary ? ' (main)' : ''))));
+    }).catch((ex) => toast(ex.message, 'error'));
+    const savePick = h('button.btn.soft', { type: 'button', onclick: async () => {
+      savePick.disabled = true;
+      try {
+        const r = await api.put('/calendar/calendar', { id: picker.value });
+        toast(`Bookings now go to “${r.name}”`);
+        rerender();
+      } catch (ex) {
+        toast(ex.message, 'error');
+        savePick.disabled = false;
+      }
+    } }, 'Use this calendar');
+    card.append(
+      h('div.card-head', h('h3', icon('calendar', 20), ' Google Calendar'), h('span.badge.paid', 'Connected')),
+      h('p', `Bookings are added to ${cal.account || 'your Google account'}${cal.connectedAt ? ' (connected ' + fmtDateTime(cal.connectedAt) + ')' : ''}.`),
+      h('div.row', field('Calendar', picker, 'Upcoming bookings move across when you change it.'), savePick),
+      cal.failed ? h('div.alert.warn', icon('alert', 18), `${cal.failed} booking${cal.failed > 1 ? 's are' : ' is'} not in Google Calendar yet. ${cal.lastError || ''}`) : '',
+      h('p.muted.small', 'Bookings made, moved or cancelled here are copied to the calendar. Changes made in Google Calendar are not copied back, so make changes in this app.'),
+      h('div.row',
+        h('button.btn.ghost', { type: 'button', onclick: async (e) => {
+          e.currentTarget.disabled = true;
+          try {
+            const r = await api.post('/calendar/sync');
+            toast(r.failed ? `${r.failed} could not be copied` : 'Google Calendar is up to date', r.failed ? 'error' : 'ok');
+          } catch (ex) {
+            toast(ex.message, 'error');
+          }
+          rerender();
+        } }, icon('repeat', 18), 'Sync now'),
+        h('button.btn.ghost', { type: 'button', onclick: connect }, icon('user', 18), 'Use a different Google account'),
+        h('button.btn.ghost.danger-text', { type: 'button', onclick: async () => {
+          if (!(await confirmDialog({ title: 'Disconnect Google Calendar?', message: 'Upcoming bookings are taken out of the calendar. They stay in this app.', confirmLabel: 'Disconnect', danger: true }))) return;
+          await api.post('/calendar/disconnect');
+          toast('Google Calendar disconnected');
+          rerender();
+        } }, 'Disconnect')));
+  } else {
+    emailEl = h('input.input', { type: 'email', value: s.business_email || '', placeholder: 'you@gmail.com', autocapitalize: 'none' });
+    card.append(
+      h('div.card-head', h('h3', icon('calendar', 20), ' Google Calendar'), h('span.badge.unpaid', 'Not connected')),
+      h('p', 'Connect a Google account and every booking appears in its calendar, on your phone too.'),
+      cal.configured
+        ? h('div.stack',
+            field('Google account to use', emailEl, 'Google will ask you to sign in and allow access. You can change the account later.'),
+            h('div.row', h('button.btn.primary', { type: 'button', onclick: connect }, icon('calendar', 18), 'Connect Google Calendar')),
+            h('details.more',
+              h('summary', 'If Google says the app is blocked or not verified'),
+              h('ol.small',
+                h('li', 'In console.cloud.google.com, open the same project used for Drive backups.'),
+                h('li', 'APIs & Services › Library: enable “Google Calendar API”.'),
+                h('li', 'OAuth consent screen › Test users: add the Google account above.'),
+                h('li', 'On the “Google hasn’t verified this app” screen, choose Continue.'))))
+        : h('div.alert.note', icon('note', 18), h('div', 'First set up the Google app once in ', h('a', { href: '#/settings/backup' }, 'Backup & Data › Google Drive'), '. The calendar uses the same Google app.')));
+  }
+  body.append(card);
+
+  const emailReady = s.email_configured === '1';
+  const stagesOn = new Set(String(s.appt_reminder_stages ?? '').split(','));
+  const stageBoxes = [['1w', '1 week before'], ['1d', '1 day before'], ['2h', '2 hours before']].map(([v, l]) => [v, h('input', { type: 'checkbox', checked: stagesOn.has(v) }), l]);
+  const emailInputs = settingsForm(body, s, (f) => [
+    emailReady ? null : h('div.alert.warn', icon('alert', 18), h('div', 'Customer emails need your mailbox set up first in ', h('a', { href: '#/settings/email' }, 'Settings › Email'), '.')),
+    h('label.check', f('appt_confirm_email', { type: 'checkbox' }), ' Email customers a confirmation when they are booked'),
+    h('label.check', f('appt_reminder_email', { type: 'checkbox' }), ' Email customers reminders before their appointment'),
+    h('div.field', h('span.label', 'Send reminders'), h('div.row', stageBoxes.map(([, box, l]) => h('label.check', box, ' ' + l)))),
+    field('Default appointment length (minutes)', f('appt_default_minutes', { inputmode: 'numeric' }), 'Used when the chosen services have no length set.'),
+  ], { title: 'Customer emails', intro: 'Only customers with an email address on file get these. You can untick the box on any booking. Customers can tap Confirm, Change time or Cancel (this opens the booking page below when it is on, otherwise a reply to your salon email in Settings › Business) and add the booking to their own calendar.' });
+  // Reminder times are saved with the rest of that form.
+  emailInputs.appt_reminder_stages = { type: 'text', get value() { return stageBoxes.filter(([, b]) => b.checked).map(([v]) => v).join(','); } };
+  // Online confirm / cancel / change for customers.
+  const openDays = new Set(String(s.appt_open_days ?? '').split(','));
+  const dayBoxes = [['1','Mon'],['2','Tue'],['3','Wed'],['4','Thu'],['5','Fri'],['6','Sat'],['0','Sun']].map(([v, l]) => [v, h('input', { type: 'checkbox', checked: openDays.has(v) }), l]);
+  const linkInputs = settingsForm(body, s, (f) => [
+    h('label.check', f('appt_customer_links', { type: 'checkbox' }), ' Customers can confirm, cancel or change their booking online'),
+    h('label.check', f('appt_online_booking', { type: 'checkbox' }), ' Anyone can book online with a “Book now” link'),
+    s.public_base_url ? h('p.small.muted', 'Book now link for Instagram and Google: ', h('strong', s.public_base_url + '/book')) : null,
+    field('Customer page address', f('public_base_url', { placeholder: 'https://book.yoursalon.com' }), 'The secure web address of the tunnel to this computer. Only the booking pages are reachable there; the rest of the app stays on your Wi-Fi.'),
+    h('div.grid-3',
+      field('Opens', f('appt_open_time', { inputType: 'time' })),
+      field('Closes', f('appt_close_time', { inputType: 'time' })),
+      field('Changes allowed until', f('appt_change_cutoff_hours', { type: 'select', options: [[0, 'Start time'], [2, '2 hours before'], [4, '4 hours before'], [12, '12 hours before'], [24, '1 day before'], [48, '2 days before']] }))),
+    h('div.field', h('span.label', 'Open days (for times customers can pick)'), h('div.row', dayBoxes.map(([, box, l]) => h('label.check', box, ' ' + l)))),
+  ], { title: 'Customer booking page', intro: 'Customers can book, confirm, cancel or pick a new free time themselves, up to a year ahead. They see how many times are free each day. To close a break, a day off or a holiday, use Block time on the Appointments screen. You get an email whenever customers book or change, and the app and calendar update themselves.' });
+  // Open days are saved with the rest of that form.
+  linkInputs.appt_open_days = { type: 'text', get value() { return dayBoxes.filter(([, b]) => b.checked).map(([v]) => v).join(','); } };
+
+  if (emailReady) {
+    const to = h('input.input', { type: 'email', value: s.business_email || '', placeholder: 'you@gmail.com' });
+    body.append(h('div.card.row', field('See what customers get: send a sample to', to), h('button.btn.soft', { type: 'button', onclick: async (e) => {
+      e.currentTarget.disabled = true;
+      try {
+        await api.post('/appointments/sample-email', { to: to.value });
+        toast('Sample sent to ' + to.value);
+      } catch (ex) {
+        toast(ex.message, 'error');
+      }
+      e.currentTarget.disabled = false;
+    } }, icon('mail', 18), 'Send sample')));
+  }
+}
+
 async function email(body) {
   const s = await api.get('/settings');
   clear(body);
@@ -390,6 +513,11 @@ const ACTION_LABELS = {
   'user.created': 'User created', 'user.updated': 'User updated', 'user.password_changed': 'Password changed', 'auth.login': 'Signed in', 'auth.login_required': 'Sign-in setting changed', 'auth.login_failed': 'Failed sign-in',
   'settings.updated': 'Settings changed', 'settings.tax_changed': 'Tax settings changed', 'backup.created': 'Backup created', 'backup.restored': 'Backup restored',
   'backup.deleted': 'Backup deleted', 'backup.downloaded': 'Backup downloaded', 'data.exported': 'Data exported', 'drive.connected': 'Google Drive connected', 'drive.disconnected': 'Google Drive disconnected',
+  'appointment.booked': 'Appointment booked', 'appointment.rescheduled': 'Appointment moved', 'appointment.updated': 'Appointment changed',
+  'appointment.cancelled': 'Appointment cancelled', 'appointment.confirmed': 'Appointment confirmed', 'appointment.completed': 'Appointment completed',
+  'appointment.no_show': 'Appointment no-show', 'calendar.connected': 'Google Calendar connected',
+  'calendar.disconnected': 'Google Calendar disconnected', 'calendar.changed': 'Calendar changed',
+  'appointment_block.created': 'Time blocked', 'appointment_block.removed': 'Blocked time removed',
 };
 
 function describe(a) {

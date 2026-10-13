@@ -71,9 +71,20 @@ export async function render(view) {
     actions,
     body);
 
-  const d = await api.get('/dashboard');
+  const today = todayYmd();
+  const [d, appts] = await Promise.all([api.get('/dashboard'), session.can('appointments.view') ? api.get(`/appointments?from=${today}&to=${today}`).catch(() => []) : []]);
   const t = d.todayStats;
   const blocks = [];
+  const upcoming = appts.filter((a) => ['booked', 'confirmed'].includes(a.status));
+  if (upcoming.length) {
+    blocks.push(h('section.card',
+      h('div.card-head', h('h3', "Today's appointments"), h('a.link', { href: '#/appointments' }, 'Calendar ', icon('chevronRight', 16))),
+      h('div.list', upcoming.map((a) =>
+        h('a.list-row', { href: `#/visit?appointment=${a.id}` },
+          h('span.time', fmtTime(a.startAt)),
+          h('span.grow', h('strong', a.customerName), h('span.muted.small.block', a.services.map((x) => x.name).join(', '))),
+          h('span.btn.soft.sm', 'Start visit'))))));
+  }
   if (d.financials) {
     blocks.push(h('section',
       h('h2.section-title', 'Today'),

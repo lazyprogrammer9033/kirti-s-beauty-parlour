@@ -134,7 +134,7 @@ module.exports = function visitRoutes(api, ctx) {
   });
 
   // Check-in + bill in one atomic step: visit, visit services, invoice, items, payments.
-  api.post('/visits', create, (req, res) => {
+  api.post('/visits', create, async (req, res) => {
     const db = ctx.db();
     const clientRef = readClientRef(req.body.clientRef);
     if (clientRef) {
@@ -149,6 +149,10 @@ module.exports = function visitRoutes(api, ctx) {
     const notes = str(req.body.notes, { max: 2000 });
     const staffUserId = req.body.staffUserId ? intParam(req.body.staffUserId, 'staff') : req.user.id;
     if (!db.prepare('SELECT 1 FROM users WHERE id = ?').get(staffUserId)) throw new HttpError(400, 'Staff member not found');
+    const appointmentId = req.body.appointmentId ? intParam(req.body.appointmentId, 'appointment') : null;
+    if (appointmentId && !db.prepare('SELECT 1 FROM appointments WHERE id = ? AND customer_id = ?').get(appointmentId, customerId)) {
+      throw new HttpError(400, 'That appointment belongs to a different customer');
+    }
     if (paidCents < calc.totalCents && !req.body.allowBalance) {
       throw new HttpError(400, 'The bill is not fully paid. Confirm to leave a balance owing.', { needsBalanceConfirm: true });
     }
@@ -165,8 +169,9 @@ module.exports = function visitRoutes(api, ctx) {
     const result = db.transaction(() => {
       const prior = db.prepare("SELECT COUNT(*) c FROM visits WHERE customer_id = ? AND status = 'completed'").get(customerId).c;
       const visitCode = nextVisitCode(db);
-      const visitId = db.prepare(`INSERT INTO visits (visit_code, customer_id, staff_user_id, visit_at, business_date, is_first_visit, status, notes, created_at, updated_at, client_ref)
-        VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?)`).run(visitCode, customerId, staffUserId, nowStr, bdate, prior === 0 ? 1 : 0, notes, nowStr, nowStr, clientRef).lastInsertRowid;
+      const visitId = db.prepare(`INSERT INTO visits (visit_code, customer_id, staff_user_id, appointment_id, visit_at, business_date, is_first_visit, status, notes, created_at, updated_at, client_ref)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?)`).run(visitCode, customerId, staffUserId, appointmentId, nowStr, bdate, prior === 0 ? 1 : 0, notes, nowStr, nowStr, clientRef).lastInsertRowid;
+      if (appointmentId) db.prepare("UPDATE appointments SET status = 'completed', updated_at = ? WHERE id = ?").run(nowStr, appointmentId);
 
       const invoiceNumber = nextInvoiceNumber(db, bdate.slice(0, 4));
       const balance = calc.totalCents - paidCents;
@@ -204,6 +209,7 @@ module.exports = function visitRoutes(api, ctx) {
       return { visitId, visitCode, invoiceId, invoiceNumber, totalCents: calc.totalCents, balanceCents: balance };
     })();
 
+    if (appointmentId) await ctx.calendar.syncAppointment(appointmentId);
     res.status(201).json(result);
   });
 };

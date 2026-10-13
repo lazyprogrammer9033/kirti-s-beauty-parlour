@@ -37,6 +37,7 @@ export const api = {
   get: (u) => request('GET', u),
   post: (u, b = {}, h) => request('POST', u, b, h),
   put: (u, b = {}) => request('PUT', u, b),
+  del: (u) => request('DELETE', u),
 };
 
 // Downloads a file from a GET endpoint (works in Safari and Chrome).

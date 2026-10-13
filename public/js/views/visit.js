@@ -27,6 +27,7 @@ export async function render(view, { query }) {
     quoteError: '',
     category: catalogue[0]?.id ?? null,
     busy: false,
+    appointmentId: null,
   };
   let keySeq = 0;
 
@@ -364,6 +365,7 @@ export async function render(view, { query }) {
     const paid = payments.reduce((s, p) => s + p.amountCents, 0);
     if (paid > q.totalCents) return toast('Payments are more than the total', 'error');
     const body = { customerId: state.customer.id, ...payload(), payments, notes: state.notes, staffUserId: state.staffUserId, allowBalance: paid < q.totalCents };
+    if (state.appointmentId && state.customer.id === state.appointmentCustomerId) body.appointmentId = state.appointmentId;
     state.busy = true;
     renderQuoteParts();
     try {
@@ -429,5 +431,20 @@ export async function render(view, { query }) {
 
   renderAll();
   const preset = Number(query.get('customer'));
+  const fromAppointment = Number(query.get('appointment'));
+  if (fromAppointment && !offline.active) {
+    // Checking in a booked customer: bring their booked services into the bill.
+    const appt = await api.get('/appointments/' + fromAppointment).catch(() => null);
+    if (appt) {
+      state.appointmentId = appt.id;
+      state.appointmentCustomerId = appt.customerId;
+      if (appt.staffUserId) state.staffUserId = appt.staffUserId;
+      await selectCustomer(appt.customerId);
+      const all = catalogue.flatMap((c) => c.services);
+      appt.services.map((s) => all.find((x) => x.id === s.id)).filter(Boolean).forEach(addService);
+      renderAll();
+      return;
+    }
+  }
   if (preset) await selectCustomer(preset);
 }

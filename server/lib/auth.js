@@ -65,6 +65,11 @@ function loadUser(db, req) {
   if (!row || !row.active || row.expires_at < now.toISOString()) return null;
   // Each request pushes the idle cut-off back (at most once a minute).
   const next = new Date(now.getTime() + IDLE_MINUTES * 60000);
+  // Older 14-day sign-ins (from before this rule) are ended so everyone signs in again once.
+  if (Date.parse(row.expires_at) > next.getTime() + 60000) {
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(row.sid);
+    return null;
+  }
   if (Date.parse(row.expires_at) < next.getTime() - 60000) db.prepare('UPDATE sessions SET expires_at = ? WHERE id = ?').run(next.toISOString(), row.sid);
   return { id: row.id, username: row.username, displayName: row.display_name, role: row.role, sessionId: row.sid };
 }

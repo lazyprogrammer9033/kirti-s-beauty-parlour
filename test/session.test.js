@@ -27,6 +27,8 @@ test('sign-in ends when the browser closes and after 30 minutes unused', async (
   db.prepare('UPDATE sessions SET expires_at = ?').run(soon);
   assert.equal((await c.get('/api/customers')).status, 200);
   assert.ok(Date.parse(row().expires_at) > Date.now() + 25 * 60000, 'activity extends the session');
-  db.prepare('UPDATE sessions SET expires_at = ?').run(new Date(Date.now() - 1000).toISOString());
+  // An old 14-day sign-in from before this change is ended too.
+  db.prepare('UPDATE sessions SET expires_at = ?').run(new Date(Date.now() + 10 * 86400000).toISOString());
+  assert.equal((await c.get('/api/customers')).status, 401);
   assert.equal((await c.get('/api/customers')).status, 401);
 });

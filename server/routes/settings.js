@@ -37,6 +37,7 @@ const EDITABLE = {
   tax_number: (v) => str(v, { max: 40 }) || '',
   receipt_show_tax_number: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
   receipt_footer: (v) => str(v, { max: 500 }) || '',
+  receipt_booking_link: (v) => str(v, { max: 200 }) || '',
   staff_can_discount: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
   staff_can_custom_charge: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
   backup_auto_enabled: (v) => (v === true || v === '1' || v === 1 ? '1' : '0'),
@@ -109,7 +110,7 @@ const EDITABLE = {
 
 // What staff need for billing and receipts; everything else is owner-only.
 const STAFF_VISIBLE = ['business_name', 'business_address', 'business_phone', 'business_email', 'business_website', 'business_logo', 'currency',
-  'tax_name', 'tax_rate_bp', 'prices_include_tax', 'receipt_footer', 'staff_can_discount', 'staff_can_custom_charge', 'timezone', 'tax_number', 'receipt_show_tax_number',
+  'tax_name', 'tax_rate_bp', 'prices_include_tax', 'receipt_footer', 'staff_can_discount', 'staff_can_custom_charge', 'timezone', 'tax_number', 'receipt_show_tax_number', 'receipt_booking_link',
   'appt_default_minutes', 'appt_confirm_email'];
 
 module.exports = function settingsRoutes(api, ctx) {

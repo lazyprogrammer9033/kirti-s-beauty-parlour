@@ -115,6 +115,7 @@ async function tax(body) {
   ], { title: 'Tax', intro: 'Each bill stores the tax it was charged, so old receipts never change.' });
   settingsForm(body, s, (f) => [
     field('Thank-you message', f('receipt_footer', { type: 'textarea', rows: 3 })),
+    field('Book-again link', f('receipt_booking_link', { placeholder: 'tinyurl.com/kbpbook' }), 'Printed at the bottom of receipts so customers can book their next visit.'),
   ], { title: 'Receipts' });
   settingsForm(body, s, (f) => [
     h('label.check', f('staff_can_discount', { type: 'checkbox' }), ' Staff can give discounts'),

@@ -1,10 +1,13 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
+const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.json': 'application/json', '.html': 'text/html', '.txt': 'text/plain', '.woff2': 'font/woff2' };
 const ROOT_NAME = 'Beauty Parlour';
-const SUBFOLDERS = { backups: 'Backups', reports: 'Reports', receipts: 'Receipts', exports: 'Exports' };
+const SUBFOLDERS = { backups: 'Backups', reports: 'Reports', receipts: 'Receipts', exports: 'Exports', brand: 'Brand' };
 // drive.file only lets the app see files it created itself, never the rest of the owner's Drive.
 const SCOPES = 'https://www.googleapis.com/auth/drive.file openid email';
 
@@ -194,6 +197,56 @@ class DriveService {
     const folders = await this.ensureFolders();
     const init = await this.api('POST', `${this.uploadUrl}/files?uploadType=resumable&fields=id,name`, {
       json: { name, parents: [folders[folderKey]] },
+      headers: { 'X-Upload-Content-Type': mimeType, 'X-Upload-Content-Length': String(buffer.length) },
+    });
+    const location = init.headers.get('location');
+    if (!location) throw driveError('Google Drive did not accept the upload', 502);
+    const res = await this.fetch(location, { method: 'PUT', headers: { 'Content-Type': mimeType, 'Content-Length': String(buffer.length) }, body: buffer });
+    if (!res.ok) throw driveError(`Google Drive upload failed (${res.status})`, 502);
+    return res.json();
+  }
+
+  // Mirrors a local folder (logos, QR codes, business cards...) into
+  // "Beauty Parlour/Brand", keeping sub-folders. New files are uploaded and
+  // changed ones replaced; nothing in Drive is ever deleted.
+  async syncFolder(localDir, folderKey = 'brand') {
+    if (!fs.existsSync(localDir)) return { uploaded: 0, updated: 0 };
+    const folders = await this.ensureFolders();
+    const counts = { uploaded: 0, updated: 0 };
+    const walk = async (dir, parentId) => {
+      const q = `'${parentId}' in parents and trashed = false`;
+      const listed = (await (await this.api('GET', `${this.apiUrl}/files?${new URLSearchParams({ q, pageSize: '1000', fields: 'files(id,name,mimeType,md5Checksum)' })}`)).json()).files || [];
+      const byName = new Map(listed.map((f) => [f.name, f]));
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name.startsWith('.')) continue;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          const existing = byName.get(entry.name);
+          const id = existing && existing.mimeType === FOLDER_MIME ? existing.id : await this.findOrCreateFolder(entry.name, parentId);
+          await walk(full, id);
+        } else if (entry.isFile()) {
+          const buf = fs.readFileSync(full);
+          const md5 = crypto.createHash('md5').update(buf).digest('hex');
+          const existing = byName.get(entry.name);
+          if (existing && existing.md5Checksum === md5) continue;
+          const mime = MIME[path.extname(entry.name).toLowerCase()] || 'application/octet-stream';
+          if (existing) {
+            await this.api('PATCH', `${this.uploadUrl}/files/${encodeURIComponent(existing.id)}?uploadType=media`, { headers: { 'Content-Type': mime }, raw: buf });
+            counts.updated++;
+          } else {
+            await this.uploadTo(parentId, entry.name, mime, buf);
+            counts.uploaded++;
+          }
+        }
+      }
+    };
+    await walk(localDir, folders[folderKey]);
+    return counts;
+  }
+
+  async uploadTo(parentId, name, mimeType, buffer) {
+    const init = await this.api('POST', `${this.uploadUrl}/files?uploadType=resumable&fields=id,name`, {
+      json: { name, parents: [parentId] },
       headers: { 'X-Upload-Content-Type': mimeType, 'X-Upload-Content-Length': String(buffer.length) },
     });
     const location = init.headers.get('location');

@@ -68,7 +68,7 @@ export async function render(view, { params, query }) {
     clear(list, blockCards, h('div.card', emptyState('calendar', 'No appointments', `Nothing booked for ${dayName(day, 'long')}.`,
       h('button.btn.primary', { type: 'button', onclick: () => bookingModal({ date: day }).then((a) => a && go(a.date)) }, icon('plus', 18), 'Book appointment'))));
   } else {
-    clear(list, blockCards, rows.map((a) => h('button.appt-card' + (['cancelled', 'no_show'].includes(a.status) ? '.dim' : ''), { type: 'button', onclick: () => detailsModal(a, () => render(view, { params, query })) },
+    clear(list, blockCards, rows.map((a) => h('button.appt-card.s-' + a.status + (['cancelled', 'no_show'].includes(a.status) ? '.dim' : ''), { type: 'button', onclick: () => detailsModal(a, () => render(view, { params, query })) },
       h('div.appt-time', h('strong', fmtTime(a.startAt)), h('span.muted.small', fmtTime(a.endAt))),
       h('div.grow',
         h('div.appt-name', a.customerName, apptBadge(a.status)),

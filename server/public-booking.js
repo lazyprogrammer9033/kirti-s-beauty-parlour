@@ -42,7 +42,7 @@ function bookingRoutes(app, ctx, { page, esc, salonTz, timeLabel, slotPicker, Ra
     const picked = new Set(chosen(req.query.s).services.map((s) => s.id));
     page(res, 'Book', `<h1>Book an appointment</h1><p class="muted">Choose one or more services.</p>
 <form method="get" action="/book/time">${groups.map((g) => `<h3 class="cat">${esc(g)}</h3>${all.filter((s) => s.category === g).map((s) => `
-<label class="svc"><input type="checkbox" name="s" value="${s.id}"${picked.has(s.id) ? ' checked' : ''}><span class="grow">${esc(s.name)}${s.durationMinutes ? `<span class="muted"> · ${s.durationMinutes} min</span>` : ''}</span><span>${money(s.priceCents)}</span></label>`).join('')}`).join('')}
+<label class="svc"><input type="checkbox" name="s" value="${s.id}"${picked.has(s.id) ? ' checked' : ''}><span class="grow">${esc(s.name)}${s.durationMinutes ? `<span class="muted dur">${s.durationMinutes} min</span>` : ''}</span><span>${money(s.priceCents)}</span></label>`).join('')}`).join('')}
 <button class="btn primary" type="submit">Next: pick a time</button></form>`);
   });
 

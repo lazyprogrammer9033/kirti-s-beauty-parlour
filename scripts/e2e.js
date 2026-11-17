@@ -121,7 +121,7 @@ const DEVICES = {
 
     // Dashboard, billing, reports, services, settings
     await page.goto(t.base + '/#/dashboard');
-    await page.locator('.stat-card').first().waitFor();
+    await page.locator('.today-card').first().waitFor();
     await page.waitForTimeout(300);
     await shot(page, '11-dashboard-ipad-landscape');
     await page.locator('.search-input').fill('4165551234');
@@ -165,7 +165,7 @@ const DEVICES = {
       const p = await c2.newPage();
       watch(p, name);
       await p.goto(t.base + '/#/dashboard');
-      await p.locator('.stat-card').first().waitFor();
+      await p.locator('.today-card').first().waitFor();
       await p.waitForTimeout(300);
       await shot(p, `20-dashboard-${name}`);
       await p.goto(t.base + '/#/visit?customer=1');

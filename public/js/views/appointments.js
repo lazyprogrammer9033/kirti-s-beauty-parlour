@@ -31,7 +31,7 @@ export async function render(view, { params, query }) {
   const end = addDays(start, 6);
   const go = (ymd) => navigate('appointments/' + ymd);
 
-  const list = h('div.stack', spinner());
+  const list = h('div.stack.appt-day', spinner());
   const strip = h('div.week-strip');
   clear(view,
     pageHeader('Appointments', session.settings.calendar_connected === '1' ? 'Bookings are copied to your Google Calendar.' : 'Book, reschedule and cancel.',
@@ -68,14 +68,16 @@ export async function render(view, { params, query }) {
     clear(list, blockCards, h('div.card', emptyState('calendar', 'No appointments', `Nothing booked for ${dayName(day, 'long')}.`,
       h('button.btn.primary', { type: 'button', onclick: () => bookingModal({ date: day }).then((a) => a && go(a.date)) }, icon('plus', 18), 'Book appointment'))));
   } else {
-    clear(list, blockCards, rows.map((a) => h('button.appt-card' + (['cancelled', 'no_show'].includes(a.status) ? '.dim' : ''), { type: 'button', onclick: () => detailsModal(a, () => render(view, { params, query })) },
-      h('div.appt-time', h('strong', fmtTime(a.startAt)), h('span.muted.small', fmtTime(a.endAt))),
+    clear(list, h('div.day-head', h('h2.display', dayName(day, 'long')), h('span.muted', `${rows.length} appointment${rows.length === 1 ? '' : 's'}`)), blockCards, rows.map((a) => h('div.tl-row.s-' + a.status,
+      h('div.tl-time', h('strong', fmtTime(a.startAt)), h('span', fmtTime(a.endAt))),
+      h('span.tl-node'),
+      h('button.appt-card.s-' + a.status + (['cancelled', 'no_show'].includes(a.status) ? '.dim' : ''), { type: 'button', onclick: () => detailsModal(a, () => render(view, { params, query })) },
       h('div.grow',
         h('div.appt-name', a.customerName, apptBadge(a.status)),
         h('div.muted.small', [a.services.map((s) => s.name).join(', ') || 'No services chosen', `${a.durationMinutes || ''} min`].filter(Boolean).join(' · ')),
         a.notes ? h('div.small', a.notes) : null,
         syncNote(a)),
-      icon('chevronRight', 20))));
+      icon('chevronRight', 20)))));
   }
   if (query.get('book')) bookingModal({ date: day, customerId: Number(query.get('book')) }).then((a) => a && go(a.date));
 }

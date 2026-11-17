@@ -42,8 +42,8 @@ function bookingRoutes(app, ctx, { page, esc, salonTz, timeLabel, slotPicker, Ra
     const picked = new Set(chosen(req.query.s).services.map((s) => s.id));
     page(res, 'Book', `<h1>Book an appointment</h1><p class="muted">Choose one or more services.</p>
 <form method="get" action="/book/time">${groups.map((g) => `<h3 class="cat">${esc(g)}</h3>${all.filter((s) => s.category === g).map((s) => `
-<label class="svc"><input type="checkbox" name="s" value="${s.id}"${picked.has(s.id) ? ' checked' : ''}><span class="grow">${esc(s.name)}${s.durationMinutes ? `<span class="muted"> · ${s.durationMinutes} min</span>` : ''}</span><span>${money(s.priceCents)}</span></label>`).join('')}`).join('')}
-<button class="btn primary" type="submit">Next: pick a time</button></form>`);
+<label class="svc"><input type="checkbox" name="s" value="${s.id}"${picked.has(s.id) ? ' checked' : ''}><span class="grow">${esc(s.name)}${s.durationMinutes ? `<span class="muted dur">${s.durationMinutes} min</span>` : ''}</span><span>${money(s.priceCents)}</span></label>`).join('')}`).join('')}
+<div class="sticky"><button class="btn primary" type="submit">Next: pick a time</button></div></form>`, 200, { step: 1 });
   });
 
   // Checkbox values arrive as s=1&s=2; keep them as one "1,2" value from here on.
@@ -56,7 +56,7 @@ function bookingRoutes(app, ctx, { page, esc, salonTz, timeLabel, slotPicker, Ra
     const link = (p) => `/book/time?${new URLSearchParams({ s: c.key, ...p })}`;
     page(res, 'Pick a time', `<h1>Pick a day and time</h1><p class="muted">${esc(c.services.map((s) => s.name).join(', '))} · ${c.minutes} min</p>
 ${slotPicker({ query: req.query, minutes: c.minutes, link, form: '<form method="get" action="/book/details">', hidden: `<input type="hidden" name="s" value="${c.key}">` })}
-<a class="btn" href="/book?s=${c.key}">Back</a>`);
+<a class="btn" href="/book?s=${c.key}">Back</a>`, 200, { step: 2 });
   });
 
   function detailsForm(res, c, date, time, values = {}, error = '') {
@@ -72,7 +72,7 @@ ${error ? `<div class="note bad">${esc(error)}</div>` : ''}
 <label class="fld">Anything we should know? (optional)<textarea name="notes" rows="2" maxlength="300">${esc(values.notes)}</textarea></label>
 <label class="hp" aria-hidden="true">Leave empty<input name="website" tabindex="-1" autocomplete="off"></label>
 <button class="btn primary" type="submit">Book appointment</button></form>
-<a class="btn" href="/book/time?s=${c.key}&amp;date=${esc(date)}">Back</a>`, error ? 400 : 200);
+<a class="btn" href="/book/time?s=${c.key}&amp;date=${esc(date)}">Back</a>`, error ? 400 : 200, { step: 3 });
   }
 
   app.get('/book/details', (req, res) => {

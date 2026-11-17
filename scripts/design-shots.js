@@ -88,7 +88,7 @@ const LOGO = path.join(__dirname, '..', 'public', 'img', 'logo-mark.png');
     await page.locator(waitFor).first().waitFor();
   };
 
-  await go('dashboard', '.stat-card'); await shot('01-dashboard');
+  await go('dashboard', '.today-card'); await shot('01-dashboard');
   await go('visit?customer=' + cust[0], '.selected-customer');
   await page.locator('.service-tile', { hasText: 'Eyebrow threading' }).click();
   await page.locator('.service-tile', { hasText: 'Upper lip' }).click();
@@ -111,7 +111,7 @@ const LOGO = path.join(__dirname, '..', 'public', 'img', 'logo-mark.png');
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
   const p2 = await phone.newPage();
   await p2.goto(pubBase + '/book'); await p2.waitForTimeout(300);
-  await p2.screenshot({ path: path.join(OUT, '20-booking-services.png'), fullPage: true });
+  await p2.screenshot({ path: path.join(OUT, '20-booking-services.png') });
   await p2.goto(pubBase + `/book/time?s=${ids.brow}`); await p2.waitForTimeout(300);
   await p2.screenshot({ path: path.join(OUT, '21-booking-time.png'), fullPage: true });
   const timeLink = await p2.locator('a.d').first().getAttribute('href').catch(() => null);

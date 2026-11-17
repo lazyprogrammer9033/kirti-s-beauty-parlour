@@ -274,9 +274,9 @@ function authScreen({ setup, businessName }) {
   ] : [field('Username', fields.username), field('Password', fields.password)],
   err, btn);
   clear(document.getElementById('app'),
-    h('div.auth',
-      h('div.auth-art', h('div.auth-art-inner', h('img.brand-mark.lg', { src: '/img/icon.svg', alt: '' }), h('h1.display', businessName || 'Beauty Parlour'), h('p', 'Salon Manager'))),
+    h('div.auth.auth-hero',
       h('div.auth-panel',
+        h('div.auth-brand', h('img.brand-mark.lg', { src: '/img/icon.svg', alt: '' }), h('h1.display', businessName || 'Beauty Parlour'), h('p', 'Salon Manager')),
         h('div.auth-card',
           h('h2.display', setup ? 'Welcome! Let’s set up your salon' : 'Welcome back'),
           h('p.muted', setup ? 'Create the owner account. You can add staff accounts later in Settings.' : 'Sign in to continue.'),

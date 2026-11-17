@@ -110,12 +110,16 @@ function createPublicApp(ctx) {
     return `<div class="mon">${month > firstMonth ? `<a href="${esc(link({ month: shift(-1) }))}" aria-label="Previous month">‹</a>` : '<span>‹</span>'}<b>${esc(monthName)}</b>${month < lastMonth ? `<a href="${esc(link({ month: shift(1) }))}" aria-label="Next month">›</a>` : '<span>›</span>'}</div>
 <div class="cal">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((w) => `<span class="wd">${w}</span>`).join('')}${'<span></span>'.repeat(lead)}${days.map(cell).join('')}</div>
 ${date && slots.length ? `<h3 id="times">${esc(dayLabel(date))} · ${slots.length} time${slots.length === 1 ? '' : 's'} free</h3>
-${form}${hidden}<input type="hidden" name="date" value="${esc(date)}"><div class="times">${slots
-  .map((t) => `<button class="chip" type="submit" name="time" value="${t}">${esc(timeLabel(t))}</button>`).join('')}</div></form>`
+${form}${hidden}<input type="hidden" name="date" value="${esc(date)}">${[['Morning', (t) => t < '12:00'], ['Afternoon', (t) => t >= '12:00' && t < '17:00'], ['Evening', (t) => t >= '17:00']]
+  .map(([label, test]) => [label, slots.filter(test)]).filter(([, list]) => list.length)
+  .map(([label, list]) => `<p class="part">${label}</p><div class="times">${list
+    .map((t) => `<button class="chip" type="submit" name="time" value="${t}">${esc(timeLabel(t))}</button>`).join('')}</div>`).join('')}</form>`
   : `<div class="note bad">${date && anyFree ? `No free times on ${esc(dayLabel(date))}. Please pick another day.` : 'There are no free times online this month. Try the next month, or call us.'}</div>`}`;
   }
 
-  function page(res, title, body, status = 200) {
+  const STEPS = ['Services', 'Day & time', 'Your details'];
+  function page(res, title, body, status = 200, { step } = {}) {
+    const steps = step ? `<ol class="steps">${STEPS.map((l, i) => `<li class="${i + 1 < step ? 'done' : i + 1 === step ? 'on' : ''}"><span>${i + 1}</span>${l}</li>`).join('')}</ol>` : '';
     const s = salon();
     const logo = /^data:image\/(png|jpeg|jpg);base64,/.test(s.logo) ? `<img src="${esc(s.logo)}" alt="" class="logo">` : '';
     res.status(status).type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -160,7 +164,17 @@ p{margin:0 0 12px}
 :focus-visible{outline:3px solid rgba(157,79,106,.45);outline-offset:2px}
 .hp{position:absolute;left:-9999px}footer{text-align:center;margin-top:20px}
 @media (max-width:360px){.times{grid-template-columns:repeat(2,1fr)}}
-</style></head><body><main><div class="brand">${logo}<div class="name">${esc(s.name)}</div></div><div class="card">${body}</div>
+body::before{height:300px;background:radial-gradient(circle at 100% 0,transparent 0 120px,rgba(255,255,255,.12) 121px 122px,transparent 123px 200px,rgba(255,255,255,.08) 201px 202px,transparent 203px),radial-gradient(130% 120% at 0 0,#b56582 0%,#9d4f6a 45%,#6c2f48 100%);border-radius:0 0 32px 32px}
+.brand{margin:4px 0 22px}.brand .name{color:#fff;font-size:30px}.brand .tag{color:rgba(255,255,255,.75);font-size:11px;letter-spacing:.28em;text-transform:uppercase;font-weight:600;margin-top:6px}
+.logo{box-shadow:0 0 0 2px rgba(255,255,255,.35),0 10px 24px rgba(43,24,35,.3)}
+.card{box-shadow:0 2px 4px rgba(74,38,56,.05),0 24px 50px rgba(74,38,56,.14)}
+.steps{list-style:none;display:flex;gap:6px;margin:0 0 22px;padding:0;counter-reset:s}
+.steps li{flex:1;display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+.steps li::before{content:"";height:4px;border-radius:4px;background:var(--line)}
+.steps li span{display:none}.steps li.done::before{background:var(--p);opacity:.45}.steps li.on{color:var(--pd)}.steps li.on::before{background:var(--p)}
+.part{font-size:12px;text-transform:uppercase;letter-spacing:.12em;font-weight:600;color:var(--muted);margin:16px 0 0}
+.sticky{position:sticky;bottom:0;padding:18px 0 14px;margin:6px 0 -14px;background:linear-gradient(rgba(255,255,255,0),#fff 40%)}.sticky .btn{margin:0}
+</style></head><body><main><header class="brand">${logo}<div class="name">${esc(s.name)}</div><div class="tag">Online booking</div></header><div class="card">${steps}${body}</div>
 <footer class="muted">${[s.address, s.phone].filter(Boolean).map(esc).join(' · ')}</footer></main></body></html>`);
   }
 

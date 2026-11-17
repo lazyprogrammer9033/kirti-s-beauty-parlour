@@ -56,58 +56,91 @@ export function quickSearch({ autofocus = false } = {}) {
 export async function render(view) {
   const search = quickSearch({ autofocus: true });
   const firstName = session.user.displayName.split(' ')[0];
+  const action = (tag, attrs, iconName, label, sub) =>
+    h(tag + '.quick-action', attrs, h('span.qa-icon', icon(iconName, 22)), h('span.qa-text', h('span.qa-label', label), h('span.qa-sub', sub)));
   const actions = h('div.quick-actions',
-    h('button.quick-action', { type: 'button', onclick: async () => { const r = await customerFormModal(); if (r) location.hash = '#/customer/' + r.id; } }, h('span.qa-icon', icon('userPlus', 26)), h('span', 'New Customer')),
-    h('a.quick-action.primary', { href: '#/visit' }, h('span.qa-icon', icon('sparkles', 26)), h('span', 'New Visit')),
-    h('a.quick-action', { href: '#/visit?step=bill' }, h('span.qa-icon', icon('receipt', 26)), h('span', 'Create Bill')),
-    h('button.quick-action', { type: 'button', onclick: () => { search.input.focus(); search.input.scrollIntoView({ block: 'center', behavior: 'smooth' }); } }, h('span.qa-icon', icon('search', 26)), h('span', 'Search Customer')),
-    h('a.quick-action', { href: '#/billing?range=today' }, h('span.qa-icon', icon('dollar', 26)), h('span', "Today's Sales")));
+    action('a', { href: '#/visit', class: 'primary' }, 'sparkles', 'New Visit', 'Check in and bill'),
+    action('button', { type: 'button', onclick: async () => { const r = await customerFormModal(); if (r) location.hash = '#/customer/' + r.id; } }, 'userPlus', 'New Customer', 'Add to your list'),
+    action('a', { href: '#/visit?step=bill' }, 'receipt', 'Create Bill', 'Charge for services'),
+    action('button', { type: 'button', onclick: () => { search.input.focus(); search.input.scrollIntoView({ block: 'center', behavior: 'smooth' }); } }, 'search', 'Search Customer', 'Phone, name or ID'),
+    action('a', { href: '#/billing?range=today' }, 'dollar', "Today's Sales", 'Bills and payments'));
 
+  const summary = h('p.hero-summary', ' ');
   const body = h('div.stack-lg', spinner());
   clear(view,
-    h('div.hero',
-      h('div', h('p.eyebrow', fmtYmd(todayYmd())), h('h1.display', `${greeting()}, ${firstName}`)),
-      search.el),
+    h('section.hero',
+      h('div.hero-text', h('p.eyebrow', fmtYmd(todayYmd())), h('h1.display', `${greeting()}, ${firstName}`), summary),
+      h('div.hero-search', search.el)),
     actions,
     body);
 
   const today = todayYmd();
   const [d, appts] = await Promise.all([api.get('/dashboard'), session.can('appointments.view') ? api.get(`/appointments?from=${today}&to=${today}`).catch(() => []) : []]);
   const t = d.todayStats;
-  const blocks = [];
   const upcoming = appts.filter((a) => ['booked', 'confirmed'].includes(a.status));
-  if (upcoming.length) {
-    blocks.push(h('section.card',
+  summary.textContent = upcoming.length
+    ? `${upcoming.length} appointment${upcoming.length === 1 ? '' : 's'} today · next is ${upcoming[0].customerName} at ${fmtTime(upcoming[0].startAt)}`
+    : t.visits ? `${t.visits} visit${t.visits === 1 ? '' : 's'} so far today` : 'No appointments booked for today yet';
+
+  // Left column: what is happening today. Right column: today at a glance.
+  const left = [];
+  if (session.can('appointments.view')) {
+    left.push(h('section.card',
       h('div.card-head', h('h3', "Today's appointments"), h('a.link', { href: '#/appointments' }, 'Calendar ', icon('chevronRight', 16))),
-      h('div.list', upcoming.map((a) =>
-        h('a.list-row', { href: `#/visit?appointment=${a.id}` },
-          h('span.time', fmtTime(a.startAt)),
-          h('span.grow', h('strong', a.customerName), h('span.muted.small.block', a.services.map((x) => x.name).join(', '))),
-          h('span.btn.soft.sm', 'Start visit'))))));
+      upcoming.length
+        ? h('div.timeline-list', upcoming.map((a) =>
+            h('a.tl-item', { href: `#/visit?appointment=${a.id}` },
+              h('span.tl-when', fmtTime(a.startAt)),
+              h('span.tl-dot'),
+              h('span.grow', h('strong', a.customerName), h('span.muted.small.block', a.services.map((x) => x.name).join(', '))),
+              h('span.btn.soft.sm', 'Start visit'))))
+        : emptyState('calendar', 'Nothing booked', 'Walk-ins can start with “New Visit”.')));
   }
+  left.push(h('section.card',
+    h('div.card-head', h('h3', "Today's visits"), h('a.link', { href: '#/billing?range=today' }, 'All bills ', icon('chevronRight', 16))),
+    d.todayVisits.length
+      ? h('div.list', d.todayVisits.map((v) =>
+          h('a.list-row', { href: '#/invoice/' + v.invoiceId },
+            h('span.time', fmtTime(v.visitAt)),
+            h('span.grow', h('strong', v.customerName), h('span.muted.small.block', v.services || '')),
+            statusBadge(v.status),
+            h('strong.num', money(v.totalCents)))))
+      : emptyState('sparkles', 'No visits yet today', 'Start with “New Visit” when a customer arrives.')));
+
+  const glanceRow = (iconName, label, value, tone = '') => h('div.glance-row' + (tone ? '.' + tone : ''), h('span.glance-icon', icon(iconName, 18)), h('span.grow', label), h('strong', value));
+  const right = d.financials
+    ? h('section.card.today-card',
+        h('p.today-label', "Today's sales"),
+        h('p.today-value', money(t.salesCents)),
+        h('p.today-sub', `${t.visits} visit${t.visits === 1 ? '' : 's'} · ${t.customers} customer${t.customers === 1 ? '' : 's'}`),
+        h('div.glance',
+          glanceRow('userPlus', 'New customers', String(t.newCustomers)),
+          glanceRow('repeat', 'Returning customers', String(t.returningCustomers)),
+          glanceRow('alert', `Unpaid bills (${d.outstanding.invoices})`, money(d.outstanding.cents), d.outstanding.cents ? 'warn' : '')))
+    : h('section.card.today-card',
+        h('p.today-label', 'Visits today'),
+        h('p.today-value', String(t.visits)),
+        h('div.glance',
+          glanceRow('users', 'Customers today', String(t.customers)),
+          glanceRow('userPlus', 'New customers', String(t.newCustomers)),
+          glanceRow('repeat', 'Returning', String(t.returningCustomers))));
+
+  const blocks = [h('div.dash-split', h('div.stack-lg', left), h('div', right))];
   if (d.financials) {
-    blocks.push(h('section',
-      h('h2.section-title', 'Today'),
-      h('div.stat-grid.six',
-        stat("Today's sales", money(t.salesCents), `${t.visits} visit${t.visits === 1 ? '' : 's'}`, 'dollar', 'rose'),
-        stat('Customers', String(t.customers), `${t.newCustomers} new · ${t.returningCustomers} returning`, 'users'),
-        stat('Visits', String(t.visits), null, 'sparkles'),
-        stat('New customers', String(t.newCustomers), null, 'userPlus'),
-        stat('Returning customers', String(t.returningCustomers), null, 'repeat'),
-        stat('Outstanding payments', money(d.outstanding.cents), `${d.outstanding.invoices} unpaid bill${d.outstanding.invoices === 1 ? '' : 's'}`, 'alert', d.outstanding.cents ? 'warn' : ''))));
+    const kpi = (label, value) => h('div.kpi', h('span.kpi-label', label), h('span.kpi-value', value));
     blocks.push(h('section',
       h('h2.section-title', 'Performance'),
-      h('div.stat-grid.six',
-        stat('This week', money(d.weekSalesCents), null, 'chart'),
-        stat('This month', money(d.monthSalesCents), null, 'chart'),
-        stat('This year', money(d.yearSalesCents), null, 'chart'),
-        stat('Visits this month', String(d.month.visits), null, 'calendar'),
-        stat('New this month', String(d.month.newCustomers), null, 'userPlus'),
-        stat('Returning this month', String(d.month.returningCustomers), null, 'repeat'))));
+      h('div.kpi-strip',
+        kpi('This week', money(d.weekSalesCents)),
+        kpi('This month', money(d.monthSalesCents)),
+        kpi('This year', money(d.yearSalesCents)),
+        kpi('Visits this month', String(d.month.visits)),
+        kpi('New this month', String(d.month.newCustomers)),
+        kpi('Returning this month', String(d.month.returningCustomers)))));
     if (d.staffSales?.length) {
       const visits = (n) => (n ? `${n} visit${n === 1 ? '' : 's'}` : '');
-      blocks.push(h('section.card',
-        h('div.card-head', h('h3', 'Sales by staff'), h('a.link', { href: '#/reports/staff' }, 'Staff report ', icon('chevronRight', 16))),
+      blocks.push(h('section.card.table-card',
+        h('div.card-head.pad-head', h('h3', 'Sales by staff'), h('a.link', { href: '#/reports/staff' }, 'Staff report ', icon('chevronRight', 16))),
         h('div.table-scroll', h('table.table',
           h('thead', h('tr', h('th', 'Staff member'), h('th.num', 'Today'), h('th.num.hide-sm', 'This week'), h('th.num', 'This month'))),
           h('tbody', d.staffSales.map((s) => h('tr',
@@ -130,22 +163,6 @@ export async function render(view) {
         d.topCustomers.length
           ? h('div.list', d.topCustomers.map((c, i) => h('a.list-row', { href: '#/customer/' + c.id }, h('span.rank', String(i + 1)), h('span.grow', c.name), h('span.muted.small', `${c.visits} visits`), h('strong', moneyShort(c.spentCents)))))
           : emptyState('heart', 'No customers yet', 'Your best customers will appear here.'))));
-  } else {
-    blocks.push(h('div.stat-grid',
-      stat('Visits today', String(t.visits), null, 'sparkles', 'rose'),
-      stat('Customers today', String(t.customers), null, 'users'),
-      stat('New customers', String(t.newCustomers), null, 'userPlus'),
-      stat('Returning', String(t.returningCustomers), null, 'repeat')));
   }
-  blocks.push(h('section.card',
-    h('div.card-head', h('h3', "Today's visits"), h('a.link', { href: '#/billing?range=today' }, 'All bills ', icon('chevronRight', 16))),
-    d.todayVisits.length
-      ? h('div.list', d.todayVisits.map((v) =>
-          h('a.list-row', { href: '#/invoice/' + v.invoiceId },
-            h('span.time', fmtTime(v.visitAt)),
-            h('span.grow', h('strong', v.customerName), h('span.muted.small.block', v.services || '')),
-            statusBadge(v.status),
-            h('strong', money(v.totalCents)))))
-      : emptyState('sparkles', 'No visits yet today', 'Start with “New Visit” when a customer arrives.')));
   clear(body, blocks);
 }
